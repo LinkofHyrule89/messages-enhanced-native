@@ -1,0 +1,25 @@
+package com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread
+
+import android.os.Bundle
+import com.ubermicrostudios.messagesenhanced.nativeapp.R
+import com.ubermicrostudios.messagesenhanced.nativeapp.ui.Insets
+import com.ubermicrostudios.messagesenhanced.nativeapp.ui.SessionActivity
+import dagger.hilt.android.AndroidEntryPoint
+
+@AndroidEntryPoint
+class ThreadActivity : SessionActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        Insets.enable(this)
+        setContentView(R.layout.activity_thread)
+        observeAuthLoss()
+        if (savedInstanceState == null) {
+            supportFragmentManager.beginTransaction()
+                .replace(
+                    R.id.thread_host,
+                    ThreadFragment().apply { arguments = Bundle(intent.extras ?: Bundle()) },
+                )
+                .commit()
+        }
+    }
+}

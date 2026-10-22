@@ -1,0 +1,845 @@
+package com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Intent
+import android.content.res.ColorStateList
+import android.net.Uri
+import android.provider.MediaStore
+import android.view.MotionEvent
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.os.Bundle
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
+import androidx.appcompat.app.AlertDialog
+import androidx.core.content.FileProvider
+import androidx.core.os.bundleOf
+import androidx.core.view.ViewCompat
+import androidx.core.view.isVisible
+import androidx.core.widget.doAfterTextChanged
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.setFragmentResult
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.LinearSmoothScroller
+import coil.load
+import com.ubermicrostudios.messagesenhanced.nativeapp.R
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDto
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.LinkPreviewCache
+import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.FragmentThreadBinding
+import com.ubermicrostudios.messagesenhanced.nativeapp.ui.Insets
+import com.ubermicrostudios.messagesenhanced.nativeapp.ui.conversations.AvatarBinder
+import com.ubermicrostudios.messagesenhanced.nativeapp.ui.conversations.AvatarTarget
+import com.ubermicrostudios.messagesenhanced.nativeapp.ui.settings.SettingsActivity
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.MessageDto
+import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemAttachChipBinding
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.ComposerPaste
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.ComposerPlan
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.EmojiCatalog
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.Encryption
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.LinkUrls
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.MessageActions
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.MessageRuns
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import javax.inject.Inject
+
+@AndroidEntryPoint
+class ThreadFragment : Fragment() {
+
+    @Inject lateinit var previews: LinkPreviewCache
+
+    private var _binding: FragmentThreadBinding? = null
+    private val binding get() = _binding!!
+    private val viewModel: ThreadViewModel by viewModels()
+    private lateinit var adapter: MessageAdapter
+    private var gestures: ThreadGestures? = null
+    private var messagePress: MessagePress? = null
+    private var messageSheet: MessageSheet? = null
+    private var plusOpen = false
+    private var pendingCursor: Int? = null
+    private var pendingKey = ""
+    private var cameraFile: File? = null
+    private val pickGallery = registerForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(ComposerPlan.MAX_PENDING)) { uris ->
+        importUris(uris)
+    }
+    private val pickFiles = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        importUris(uris)
+    }
+    private val takePicture = registerForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val file = cameraFile
+        cameraFile = null
+        if (ok && file != null && file.exists() && file.length() > 0L) {
+            val notices = viewModel.stagePending(
+                listOf(
+                    ComposerPlan.PendingFile(
+                        id = file.name,
+                        path = file.absolutePath,
+                        name = file.name,
+                        mime = "image/jpeg",
+                        size = file.length(),
+                    ),
+                ),
+            )
+            notices.forEach { text -> toast(text) }
+        } else {
+            file?.delete()
+        }
+    }
+    private val backCallback = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() {
+            when {
+                messageSheet?.isOpen() == true -> messageSheet?.close()
+                plusOpen -> setPlus(false)
+                viewModel.state.value.selecting -> viewModel.stopSelect()
+            }
+        }
+    }
+    private var shownChrome: ThreadChrome? = null
+    private var wallpaperUrl: String? = null
+    private var messageSignature = ""
+    private var shownReplyId: String? = null
+    private var stickToBottom = false
+
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+        _binding = FragmentThreadBinding.inflate(inflater, container, false)
+        return binding.root
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        val args = requireArguments()
+        viewModel.bind(
+            conversationId = args.getString(ThreadViewModel.ARG_ID).orEmpty(),
+            title = args.getString(ThreadViewModel.ARG_TITLE).orEmpty(),
+            isGroup = args.getBoolean(ThreadViewModel.ARG_GROUP),
+            displayProtocol = args.getString(ThreadViewModel.ARG_PROTOCOL).orEmpty(),
+            participants = args.getString(ThreadViewModel.ARG_PARTICIPANTS).orEmpty(),
+            sourcePlatform = args.getString(ThreadViewModel.ARG_SOURCE).orEmpty(),
+            googlePinned = args.getBoolean(ThreadViewModel.ARG_GOOGLE_PINNED),
+            localPinnedAtMs = args.getLong(ThreadViewModel.ARG_LOCAL_PINNED),
+            notificationMode = args.getString(ThreadViewModel.ARG_NOTIFICATION).orEmpty(),
+        )
+        val twoPane = resources.getBoolean(R.bool.two_pane)
+        Insets.applyThreadChrome(binding.threadRoot, binding.header, binding.composerDock, twoPane) {
+            updateListPadding()
+        }
+        binding.header.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateListPadding() }
+        binding.composerDock.addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+            updateListPadding()
+            if (stickToBottom && bottom - top != oldBottom - oldTop) {
+                stickToBottom = false
+                val last = adapter.itemCount - 1
+                if (last >= 0) binding.messages.scrollToPosition(last)
+            }
+        }
+
+        val muted = ColorStateList.valueOf(requireContext().getColor(R.color.muted))
+        val ink = ColorStateList.valueOf(requireContext().getColor(R.color.text))
+        binding.back.imageTintList = ink
+        binding.overflow.imageTintList = ink
+        binding.attach.imageTintList = muted
+        binding.emoji.imageTintList = muted
+        binding.gallery.imageTintList = muted
+        binding.e2eeLock.imageTintList = muted
+        binding.back.isVisible = !twoPane
+        binding.back.setOnClickListener { requireActivity().onBackPressedDispatcher.onBackPressed() }
+        binding.overflow.setOnClickListener { showMenu() }
+        binding.attach.setOnClickListener { setPlus(!plusOpen) }
+        binding.emoji.setOnClickListener {
+            setPlus(false)
+            EmojiPicker.show(requireContext(), keepOpen = true) { emoji -> insertEmoji(emoji) }
+        }
+        binding.gallery.setOnClickListener {
+            setPlus(false)
+            openGallery()
+        }
+        binding.plusGallery.setOnClickListener {
+            setPlus(false)
+            openGallery()
+        }
+        binding.plusCamera.setOnClickListener {
+            setPlus(false)
+            openCamera()
+        }
+        binding.plusFiles.setOnClickListener {
+            setPlus(false)
+            openFiles()
+        }
+        binding.messages.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_DOWN && plusOpen) setPlus(false)
+            false
+        }
+
+        adapter = MessageAdapter(
+            mediaUrl = { viewModel.baseUrl.mediaUrl(it.messageId) },
+            previewOf = { previews.peek(it) },
+            imageOf = { previews.imageUrl(it) },
+            requestPreview = { previews.request(it) },
+            chrome = { threadChrome(viewModel.state.value) },
+            conversation = { snapshot(viewModel.state.value) },
+            origin = { viewModel.baseUrl.origin() },
+            messageById = { id -> viewModel.state.value.messages.firstOrNull { it.messageId == id } },
+            onQuote = { id -> scrollToQuote(id) },
+            syncGesture = { view -> gestures?.sync(view) },
+            onRecycled = { view -> gestures?.onRecycled(view) },
+        )
+        gestures = ThreadGestures(
+            recyclerView = binding.messages,
+            messageFor = { id -> viewModel.state.value.messages.firstOrNull { it.messageId == id } },
+            onReply = { message -> viewModel.startReply(message) },
+        ).also { it.attach() }
+        messageSheet = MessageSheet(
+            binding = binding,
+            host = sheetHost(),
+            starred = { id -> id in viewModel.state.value.starredIds },
+            onVisibility = { syncBack() },
+        )
+        messagePress = MessagePress(
+            recyclerView = binding.messages,
+            messageFor = { id -> viewModel.state.value.messages.firstOrNull { it.messageId == id } },
+            claimed = { gestures?.horizontalClaimed() == true },
+            selecting = { viewModel.state.value.selecting },
+            sheetOpen = { messageSheet?.isOpen() == true },
+            onToggle = { viewModel.toggleSelected(it) },
+            onTap = { message ->
+                adapter.detailId = if (adapter.detailId == message.messageId) null else message.messageId
+            },
+            onLongPress = { bubble, message -> messageSheet?.open(bubble, message) },
+        ).also { it.attach() }
+        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback)
+        binding.selectCancel.imageTintList = ink
+        binding.selectCancel.setOnClickListener { viewModel.stopSelect() }
+        binding.selectCopy.setOnClickListener { copySelection() }
+        binding.selectForward.setOnClickListener { forwardSelection() }
+        binding.selectDelete.setOnClickListener { deleteSelection() }
+        binding.messages.layoutManager = LinearLayoutManager(requireContext()).apply { stackFromEnd = true }
+        binding.messages.adapter = adapter
+        binding.messages.clipToPadding = false
+        binding.messages.clipChildren = false
+        binding.replyBarIcon.imageTintList = ColorStateList.valueOf(requireContext().getColor(R.color.accent))
+        binding.replyCancel.imageTintList = muted
+        binding.replyCancel.setOnClickListener { viewModel.clearReply() }
+
+        bindComposerPaste()
+        binding.composer.doAfterTextChanged { viewModel.onDraft(it?.toString().orEmpty()) }
+        binding.composer.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEND) {
+                setPlus(false)
+                viewModel.send()
+                true
+            } else {
+                false
+            }
+        }
+        binding.send.setOnClickListener {
+            setPlus(false)
+            viewModel.send()
+        }
+        renderReply(viewModel.state.value)
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.state.collect { state -> render(state) }
+            }
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.effects.collect { effect ->
+                    when (effect) {
+                        is ThreadEffect.Toast ->
+                            Toast.makeText(requireContext(), effect.text, Toast.LENGTH_SHORT).show()
+                        ThreadEffect.Close -> closeThread()
+                        ThreadEffect.ListChanged -> setFragmentResult(RESULT_LIST, bundleOf())
+                    }
+                }
+            }
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                previews.revision.collect {
+                    if (_binding != null && ::adapter.isInitialized) adapter.notifyDataSetChanged()
+                }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (_binding != null) viewModel.onResume()
+    }
+
+    private fun render(state: ThreadUiState) {
+        binding.title.text = state.title.ifBlank { getString(R.string.thread_title) }
+        val rows = MessageRuns.rows(state.messages, state.isGroup)
+        val signature = state.messages.joinToString("\n") {
+            "${it.messageId}\u0000${it.status}\u0000${it.statusText}\u0000${it.reactions}"
+        }
+        val jump = signature != messageSignature
+        messageSignature = signature
+        val jumpId = state.jumpMessageId
+        adapter.submitList(rows) {
+            if (_binding == null) return@submitList
+            if (jumpId != null) {
+                val index = rows.indexOfFirst { it.message.messageId == jumpId }
+                if (index >= 0) {
+                    binding.messages.scrollToPosition(index)
+                    viewModel.consumeJump(found = true)
+                } else if (state.loadedOnce && !state.loading) {
+                    viewModel.consumeJump(found = false)
+                }
+            } else if (jump && rows.isNotEmpty()) {
+                binding.messages.scrollToPosition(rows.lastIndex)
+            }
+        }
+        for (message in state.messages) {
+            val url = LinkUrls.firstHttpUrl(message.body) ?: continue
+            previews.request(url)
+        }
+        binding.empty.isVisible = !state.loading && state.messages.isEmpty()
+        binding.progress.isVisible = state.loading
+        binding.error.isVisible = !state.error.isNullOrBlank()
+        binding.error.text = state.error.orEmpty()
+        if (binding.composer.text?.toString() != state.draft) {
+            binding.composer.setText(state.draft)
+            val cursor = (pendingCursor ?: state.draft.length).coerceIn(0, state.draft.length)
+            pendingCursor = null
+            binding.composer.setSelection(cursor)
+        }
+        val canSend = !state.sending && (state.draft.isNotBlank() || state.pending.isNotEmpty())
+        binding.send.isEnabled = canSend
+        binding.attach.isEnabled = !state.sending
+        binding.gallery.isEnabled = !state.sending
+        binding.emoji.isEnabled = !state.sending
+        renderPending(state.pending)
+        paintSend(canSend)
+        binding.composer.isEnabled = !state.sending
+        binding.typing.isVisible = state.typingLabel.isNotBlank()
+        binding.typing.text = state.typingLabel
+        val encrypted = state.encryption.e2ee ||
+            Encryption.protocolEncrypted(state.displayProtocol) ||
+            Encryption.protocolEncrypted(state.protocol)
+        binding.e2eeLock.isVisible = encrypted
+        val proto = state.protocol.ifBlank { state.displayProtocol }.trim()
+        binding.composer.hint = when {
+            proto.equals("RCS", ignoreCase = true) -> getString(R.string.composer_hint_rcs)
+            proto.equals("SMS", ignoreCase = true) -> getString(R.string.composer_hint_sms)
+            else -> getString(R.string.composer_hint)
+        }
+        showWallpaper(state.backgroundUrl)
+        renderReply(state)
+        renderSelection(state)
+        AvatarBinder.bind(headerTarget(), viewModel.baseUrl.origin(), snapshot(state))
+        val chrome = threadChrome(state)
+        if (chrome != shownChrome) {
+            shownChrome = chrome
+            adapter.notifyDataSetChanged()
+        }
+    }
+
+    private fun renderReply(state: ThreadUiState) {
+        val reply = state.reply
+        val id = reply?.messageId
+        if (reply == null) {
+            shownReplyId = null
+            binding.replyBar.isVisible = false
+            return
+        }
+        val opened = id != shownReplyId
+        if (opened && isNearBottom()) stickToBottom = true
+        binding.replyBar.isVisible = true
+        binding.replyLabel.text = replyLabel(reply.author)
+        binding.replySnippet.text = reply.snippet
+        if (!opened) return
+        shownReplyId = id
+        binding.composer.requestFocus()
+        val input = requireContext().getSystemService(InputMethodManager::class.java)
+        binding.composer.post {
+            if (_binding == null) return@post
+            @Suppress("DEPRECATION")
+            input?.showSoftInput(binding.composer, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun replyLabel(author: String): CharSequence {
+        val prefix = getString(R.string.replying_to_prefix)
+        val text = SpannableString(prefix + author)
+        val start = prefix.length
+        if (text.length > start) {
+            text.setSpan(StyleSpan(Typeface.BOLD), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            text.setSpan(
+                ForegroundColorSpan(requireContext().getColor(R.color.text)),
+                start,
+                text.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
+        }
+        return text
+    }
+
+    /** Web `scrollHeight - scrollTop - clientHeight < 200` before opening the reply strip. */
+    private fun isNearBottom(): Boolean {
+        val list = binding.messages
+        val range = list.computeVerticalScrollRange()
+        val extent = list.computeVerticalScrollExtent()
+        val offset = list.computeVerticalScrollOffset()
+        if (range <= extent) return true
+        return range - offset - extent < (200f * list.resources.displayMetrics.density).toInt()
+    }
+
+    private fun scrollToQuote(id: String) {
+        val index = adapter.currentList.indexOfFirst { it.message.messageId == id }
+        if (index < 0) return
+        val layout = binding.messages.layoutManager as? LinearLayoutManager ?: return
+        val scroller = object : LinearSmoothScroller(requireContext()) {
+            override fun calculateDtToFit(
+                viewStart: Int,
+                viewEnd: Int,
+                boxStart: Int,
+                boxEnd: Int,
+                snapPreference: Int,
+            ): Int = (boxStart + (boxEnd - boxStart) / 2) - (viewStart + (viewEnd - viewStart) / 2)
+
+            override fun onStop() {
+                super.onStop()
+                if (_binding == null) return
+                flashQuote(index)
+            }
+        }
+        scroller.targetPosition = index
+        layout.startSmoothScroll(scroller)
+    }
+
+    private fun flashQuote(index: Int) {
+        val bubble = binding.messages.findViewHolderForAdapterPosition(index)?.itemView?.findViewById<View>(R.id.bubble)
+            ?: return
+        val density = bubble.resources.displayMetrics.density
+        val highlight = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 20f * density
+            setStroke((2 * density).toInt(), 0x80FFFFFF.toInt())
+        }
+        bubble.foreground = highlight
+        bubble.postDelayed({
+            if (bubble.foreground === highlight) bubble.foreground = null
+        }, 1_200)
+    }
+
+    private fun showMenu() {
+        val state = viewModel.state.value
+        ThreadMenu.show(
+            binding.overflow,
+            state,
+            ThreadMenu.Actions(
+                theme = { openTheme() },
+                mute = { viewModel.toggleMute() },
+                details = { showDetails(viewModel.state.value) },
+                refresh = { viewModel.refreshFromPhone() },
+                pin = { viewModel.togglePin() },
+                archive = { viewModel.archiveConversation() },
+                trash = { confirmTrash(viewModel.state.value) },
+                settings = {
+                    startActivity(Intent(requireContext(), SettingsActivity::class.java))
+                },
+            ),
+        )
+    }
+
+    private fun openTheme() {
+        val state = viewModel.state.value
+        if (state.conversationId.isBlank()) return
+        startActivity(Intent(requireContext(), ChatThemeActivity::class.java).apply {
+            putExtra(ChatThemeActivity.EXTRA_ID, state.conversationId)
+            putExtra(ChatThemeActivity.EXTRA_TITLE, state.title)
+            putExtra(ChatThemeActivity.EXTRA_GROUP, state.isGroup)
+        })
+    }
+
+    private fun showDetails(state: ThreadUiState) {
+        val me = Participants.parse(state.participantsJson).firstOrNull { it.me }
+        DetailsSheet.show(
+            requireContext(),
+            snapshot(state),
+            viewModel.baseUrl.origin(),
+            Participants.profileName(me),
+        )
+    }
+
+    private fun confirmTrash(state: ThreadUiState) {
+        val name = state.title.ifBlank { getString(R.string.thread_title) }
+        val dialog = AlertDialog.Builder(requireContext())
+            .setMessage(getString(R.string.trash_confirm, name))
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.menu_trash) { _, _ -> viewModel.trashConversation() }
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(0xFFFF8589.toInt())
+        }
+        dialog.show()
+    }
+
+    private fun closeThread() {
+        setFragmentResult(RESULT_LIST, bundleOf())
+        if (activity is ThreadActivity) {
+            activity?.finish()
+        } else {
+            setFragmentResult(RESULT_CLOSE, bundleOf())
+        }
+    }
+
+    private fun updateListPadding() {
+        val current = _binding ?: return
+        val top = if (current.selectBar.isVisible) current.selectBar.height else current.header.height
+        current.messages.setPadding(
+            current.messages.paddingLeft,
+            top,
+            current.messages.paddingRight,
+            current.composerDock.height,
+        )
+    }
+
+    private fun renderSelection(state: ThreadUiState) {
+        binding.header.isVisible = !state.selecting
+        binding.selectBar.isVisible = state.selecting
+        if (state.selecting) {
+            binding.selectBar.setPadding(
+                binding.header.paddingLeft,
+                binding.header.paddingTop,
+                binding.header.paddingRight,
+                binding.header.paddingBottom,
+            )
+        }
+        val count = state.selectedIds.size
+        binding.selectCount.text = "$count selected"
+        val enabled = count > 0
+        for (button in listOf(binding.selectCopy, binding.selectForward, binding.selectDelete)) {
+            button.isEnabled = enabled
+            button.alpha = if (enabled) 1f else 0.4f
+        }
+        adapter.setMarks(state.starredIds, state.selectedIds, state.selecting)
+        syncBack()
+        if (state.selecting) binding.selectBar.post { updateListPadding() } else updateListPadding()
+    }
+
+    private fun syncBack() {
+        backCallback.isEnabled = viewModel.state.value.selecting || messageSheet?.isOpen() == true || plusOpen
+    }
+
+    private fun sheetHost() = object : MessageSheet.Host {
+        override fun onReply(message: MessageDto) {
+            viewModel.startReply(message)
+        }
+
+        override fun onForward(message: MessageDto) {
+            openForward(listOf(message))
+        }
+
+        override fun onCopy(text: String) {
+            copyText(text)
+        }
+
+        override fun onStar(message: MessageDto) {
+            viewModel.toggleStar(message)
+        }
+
+        override fun onDelete(message: MessageDto) {
+            confirmDelete(listOf(message))
+        }
+
+        override fun onSelect(message: MessageDto) {
+            viewModel.startSelect(message)
+        }
+
+        override fun onInfo(message: MessageDto) {
+            showMessageInfo(message)
+        }
+
+        override fun onReact(message: MessageDto, emoji: String) {
+            EmojiCatalog.remember(emoji)
+            viewModel.react(message, emoji)
+        }
+    }
+
+    private fun copySelection() {
+        val state = viewModel.state.value
+        val messages = MessageActions.selectedSorted(state.messages, state.selectedIds)
+        copyText(MessageActions.selectionCopy(messages, state.title, state.isGroup))
+        viewModel.stopSelect()
+    }
+
+    private fun forwardSelection() {
+        val state = viewModel.state.value
+        val messages = MessageActions.selectedSorted(state.messages, state.selectedIds)
+        viewModel.stopSelect()
+        openForward(messages)
+    }
+
+    private fun deleteSelection() {
+        val state = viewModel.state.value
+        val messages = MessageActions.deletable(MessageActions.selectedSorted(state.messages, state.selectedIds))
+        if (messages.isNotEmpty()) confirmDelete(messages)
+    }
+
+    private fun openForward(messages: List<MessageDto>) {
+        val count = messages.count { it.body.trim().isNotEmpty() || MessageActions.hasMedia(it) }
+        if (count == 0) {
+            Toast.makeText(requireContext(), "Nothing to forward", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val title = if (count > 1) "Forward $count messages to" else "Forward to"
+        viewModel.forwardTargets { conversations ->
+            if (_binding == null) return@forwardTargets
+            ForwardPicker.show(requireContext(), title, conversations) { target ->
+                viewModel.forward(messages, target)
+            }
+        }
+    }
+
+    private fun confirmDelete(messages: List<MessageDto>) {
+        val prompt = MessageActions.deletePrompt(messages.size, viewModel.state.value.sourcePlatform)
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle(prompt.title)
+            .setMessage(prompt.body)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton("Delete") { _, _ -> viewModel.deleteMessages(messages) }
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(0xFFFF8589.toInt())
+        }
+        dialog.show()
+    }
+
+    private fun showMessageInfo(message: MessageDto) {
+        val state = viewModel.state.value
+        val rows = MessageActions.infoRows(
+            message = message,
+            conversationName = state.title,
+            sourcePlatform = state.sourcePlatform,
+            metaProtocol = state.protocol,
+            e2ee = state.encryption.e2ee,
+            starred = message.messageId in state.starredIds,
+            participants = Participants.parse(state.participantsJson),
+            whenText = MessageActions.infoWhen(message.timestampMs),
+        )
+        AlertDialog.Builder(requireContext())
+            .setTitle("Info")
+            .setMessage(MessageActions.infoText(rows))
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun copyText(text: String) {
+        val clipboard = requireContext().getSystemService(ClipboardManager::class.java) ?: return
+        clipboard.setPrimaryClip(ClipData.newPlainText("message", text))
+        Toast.makeText(requireContext(), "Copied", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun headerTarget() = AvatarTarget(
+        binding.headerAvatarBox,
+        binding.headerAvatar,
+        binding.headerAvatarPhoto,
+        binding.headerAvatarDuoA,
+        binding.headerAvatarDuoB,
+    )
+
+    private fun snapshot(state: ThreadUiState) = ConversationDto(
+        conversationId = state.conversationId,
+        name = state.title,
+        unifiedName = state.title,
+        isGroup = state.isGroup,
+        participants = state.participantsJson,
+        sourcePlatform = state.sourcePlatform,
+        displayProtocol = state.displayProtocol.ifBlank { state.protocol },
+        notificationMode = state.notificationMode,
+        googlePinned = state.googlePinned,
+        localPinnedAtMs = state.localPinnedAtMs,
+    )
+
+    private fun threadChrome(state: ThreadUiState): ThreadChrome {
+        val display = when {
+            Encryption.protocolEncrypted(state.displayProtocol) -> state.displayProtocol
+            Encryption.protocolEncrypted(state.protocol) -> state.protocol
+            else -> state.displayProtocol.ifBlank { state.protocol }
+        }
+        return ThreadChrome(state.colors, state.encryption, display)
+    }
+
+    private fun showWallpaper(url: String?) {
+        if (url == wallpaperUrl) return
+        wallpaperUrl = url
+        if (url.isNullOrBlank()) {
+            binding.wallpaper.setImageDrawable(null)
+            binding.wallpaper.isVisible = false
+            binding.scrim.isVisible = false
+        } else {
+            binding.wallpaper.isVisible = true
+            binding.scrim.isVisible = true
+            binding.wallpaper.load(url) { crossfade(true) }
+        }
+    }
+
+    private fun setPlus(open: Boolean) {
+        plusOpen = open
+        if (_binding == null) return
+        binding.plusSheet.isVisible = open
+        binding.attach.setImageResource(if (open) R.drawable.ic_close else R.drawable.ic_add)
+        binding.attach.contentDescription = getString(if (open) R.string.attach_close else R.string.attach_more)
+        syncBack()
+    }
+
+    private fun bindComposerPaste() {
+        ViewCompat.setOnReceiveContentListener(binding.composer, ComposerPaste.MIME_TYPES) { _, payload ->
+            val split = payload.partition { item -> item.uri != null }
+            val clip = split.first?.clip
+            val uris = if (clip != null) {
+                (0 until clip.itemCount).mapNotNull { index -> clip.getItemAt(index).uri }
+            } else {
+                emptyList()
+            }
+            if (uris.isNotEmpty()) importUris(uris)
+            split.second
+        }
+    }
+
+    private fun insertEmoji(emoji: String) {
+        val text = binding.composer.text?.toString().orEmpty()
+        val start = binding.composer.selectionStart.coerceAtLeast(0)
+        val end = binding.composer.selectionEnd.coerceAtLeast(0)
+        val next = ComposerPlan.insertEmoji(text, start, end, emoji)
+        pendingCursor = next.cursor
+        viewModel.onDraft(next.text)
+    }
+
+    private fun openGallery() {
+        pickGallery.launch(PickVisualMediaRequest(PickVisualMedia.ImageAndVideo))
+    }
+
+    private fun openFiles() {
+        pickFiles.launch(arrayOf("*/*"))
+    }
+
+    private fun openCamera() {
+        val file = AttachmentImport.cameraFile(requireContext())
+        val uri = FileProvider.getUriForFile(requireContext(), "${requireContext().packageName}.files", file)
+        val probe = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+        if (probe.resolveActivity(requireContext().packageManager) == null) {
+            file.delete()
+            toast(getString(R.string.camera_unavailable))
+            return
+        }
+        cameraFile = file
+        runCatching { takePicture.launch(uri) }.onFailure {
+            cameraFile = null
+            file.delete()
+            toast(getString(R.string.camera_unavailable))
+        }
+    }
+
+    private fun importUris(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val appContext = requireContext().applicationContext
+        viewLifecycleOwner.lifecycleScope.launch {
+            val copied = withContext(Dispatchers.IO) {
+                uris.map { uri -> runCatching { AttachmentImport.copy(appContext, uri) }.getOrNull() }
+            }
+            if (_binding == null) {
+                copied.forEach { file -> file?.let { File(it.path).delete() } }
+                return@launch
+            }
+            val files = copied.filterNotNull()
+            if (files.size < uris.size) toast(getString(R.string.could_not_attach))
+            viewModel.stagePending(files).forEach { toast(it) }
+        }
+    }
+
+    private fun renderPending(files: List<ComposerPlan.PendingFile>) {
+        val key = files.joinToString("\n") { it.id }
+        binding.attachTray.isVisible = files.isNotEmpty()
+        if (key == pendingKey) return
+        pendingKey = key
+        binding.attachChips.removeAllViews()
+        val inflater = LayoutInflater.from(binding.root.context)
+        for (file in files) {
+            val chip = ItemAttachChipBinding.inflate(inflater, binding.attachChips, true)
+            val image = file.mime.startsWith("image/")
+            chip.thumb.isVisible = image
+            chip.name.isVisible = !image
+            if (image) chip.thumb.load(File(file.path)) else chip.name.text = file.name
+            chip.remove.setOnClickListener { viewModel.removePending(file.id) }
+        }
+    }
+
+    private fun toast(text: String) {
+        val host = context ?: return
+        if (text.isBlank()) return
+        Toast.makeText(host, text, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun paintSend(enabled: Boolean) {
+        val background = if (enabled) 0xFF2C4D6E.toInt() else 0xFF233A52.toInt()
+        val foreground = if (enabled) 0xFFD3E3FF.toInt() else 0xFF7F93A8.toInt()
+        binding.send.backgroundTintList = ColorStateList.valueOf(background)
+        binding.send.imageTintList = ColorStateList.valueOf(foreground)
+    }
+
+    override fun onDestroyView() {
+        messagePress?.detach()
+        messagePress = null
+        messageSheet?.destroy()
+        messageSheet = null
+        gestures?.detach()
+        gestures = null
+        wallpaperUrl = null
+        shownChrome = null
+        messageSignature = ""
+        shownReplyId = null
+        stickToBottom = false
+        _binding = null
+        super.onDestroyView()
+    }
+
+    companion object {
+        const val RESULT_LIST = "thread_list_changed"
+        const val RESULT_CLOSE = "thread_close"
+
+        fun args(conv: ConversationDto, jumpId: String? = null, jumpTs: Long = 0L) = bundleOf(
+            ThreadViewModel.ARG_ID to conv.conversationId,
+            ThreadViewModel.ARG_TITLE to Participants.displayName(conv),
+            ThreadViewModel.ARG_GROUP to conv.isGroup,
+            ThreadViewModel.ARG_PROTOCOL to conv.displayProtocol,
+            ThreadViewModel.ARG_PARTICIPANTS to conv.participants,
+            ThreadViewModel.ARG_SOURCE to conv.sourcePlatform,
+            ThreadViewModel.ARG_GOOGLE_PINNED to conv.googlePinned,
+            ThreadViewModel.ARG_LOCAL_PINNED to conv.localPinnedAtMs,
+            ThreadViewModel.ARG_NOTIFICATION to conv.notificationMode,
+            ThreadViewModel.ARG_JUMP_ID to jumpId.orEmpty(),
+            ThreadViewModel.ARG_JUMP_TS to jumpTs,
+        )
+
+        fun newInstance(conv: ConversationDto, jumpId: String? = null, jumpTs: Long = 0L): ThreadFragment =
+            ThreadFragment().apply { arguments = args(conv, jumpId, jumpTs) }
+
+        fun writeIntent(intent: Intent, conv: ConversationDto, jumpId: String? = null, jumpTs: Long = 0L) {
+            intent.putExtras(args(conv, jumpId, jumpTs))
+        }
+    }
+}

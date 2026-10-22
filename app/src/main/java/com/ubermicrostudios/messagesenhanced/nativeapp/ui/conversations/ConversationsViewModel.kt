@@ -1,0 +1,348 @@
+package com.ubermicrostudios.messagesenhanced.nativeapp.ui.conversations
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDto
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.SseClient
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.TypingTracker
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.AuthRepository
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.MessagesRepository
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.RemoteSearch
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.ThemeRepository
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.FailureWindow
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.InboxSearch
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.NetErrors
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.ThemeColors
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+enum class SearchPhase { IDLE, SHORT, LOADING, RESULTS, EMPTY }
+
+data class SearchUi(
+    val open: Boolean = false,
+    val query: String = "",
+    val phase: SearchPhase = SearchPhase.IDLE,
+    val conversations: List<ConversationDto> = emptyList(),
+    val messages: List<InboxSearch.MessageHit> = emptyList(),
+    val messageError: String? = null,
+)
+
+/** Header profile: account photo when the server has one, otherwise your contact photo. */
+data class ProfileUi(
+    val photoUrl: String? = null,
+    val fallbackUrl: String? = null,
+    val initial: String = "?",
+    val colorSeed: String = "Me",
+    val name: String = "Me",
+)
+
+data class ConversationsUiState(
+    val conversations: List<ConversationDto> = emptyList(),
+    val loading: Boolean = false,
+    val refreshing: Boolean = false,
+    val error: String? = null,
+    val selectedId: String? = null,
+    val typingNames: Map<String, List<String>> = emptyMap(),
+    val colors: ThemeColors = ThemeColors.Default,
+    val notice: String? = null,
+    val search: SearchUi = SearchUi(),
+    val profile: ProfileUi = ProfileUi(),
+)
+
+@HiltViewModel
+class ConversationsViewModel @Inject constructor(
+    private val messages: MessagesRepository,
+    private val auth: AuthRepository,
+    private val sse: SseClient,
+    private val typing: TypingTracker,
+    private val themes: ThemeRepository,
+) : ViewModel() {
+
+    private val _state = MutableStateFlow(ConversationsUiState())
+    val state: StateFlow<ConversationsUiState> = _state
+    private val failures = FailureWindow()
+    private var sseJob: Job? = null
+    private var debounceJob: Job? = null
+    private var pollJob: Job? = null
+    private var refreshGen = 0L
+    private var searchJob: Job? = null
+    private var searchSeq = 0
+    private var lastRemote = RemoteSearch()
+    private var profileHash: String = ""
+    private var profileCheckedAt: Long = 0L
+    private var profileBusy = false
+    private var profileRetriedEmpty = false
+
+    init {
+        if (auth.hasSession()) sse.ensureStarted()
+        publishProfile()
+        refreshProfile(force = false)
+        refresh(initial = true)
+        viewModelScope.launch { runCatching { themes.refresh() } }
+        viewModelScope.launch {
+            typing.names.collect { names -> _state.update { it.copy(typingNames = names) } }
+        }
+        // App-wide palettes stay on the server; this client only paints per-chat themes.
+        startSse()
+    }
+
+    fun hasSession(): Boolean = auth.hasSession()
+
+    fun origin(): String = auth.serverUrl().trim().trimEnd('/')
+
+    fun select(id: String?) {
+        _state.update { it.copy(selectedId = id) }
+    }
+
+    fun onResume() {
+        if (auth.hasSession()) sse.ensureStarted()
+        failures.onForeground()
+        _state.update { it.copy(error = null) }
+        refreshProfile(force = false)
+        refresh()
+    }
+
+    /** Magnifier: open the field, or close it when it is already empty. */
+    fun onSearchButton() {
+        val search = _state.value.search
+        if (search.open && search.query.isBlank()) closeSearch()
+        else _state.update { it.copy(search = search.copy(open = true)) }
+    }
+
+    fun closeSearch() {
+        searchJob?.cancel()
+        searchSeq++
+        lastRemote = RemoteSearch()
+        _state.update { it.copy(search = SearchUi()) }
+    }
+
+    fun onSearchInput(value: String) {
+        _state.update { it.copy(search = it.search.copy(open = true, query = value)) }
+        scheduleSearch(value)
+    }
+
+    fun submitSearch() {
+        searchJob?.cancel()
+        runSearch(_state.value.search.query)
+    }
+
+    /** The account photo 404s: drop the hash and fall back to the contact photo. */
+    fun onProfilePhotoError() {
+        if (profileHash.isBlank()) return
+        profileHash = ""
+        publishProfile()
+    }
+
+    private fun scheduleSearch(value: String) {
+        searchJob?.cancel()
+        val q = value.trim()
+        if (q.length < InboxSearch.MIN_QUERY) {
+            searchSeq++
+            val phase = if (q.isEmpty()) SearchPhase.IDLE else SearchPhase.SHORT
+            _state.update {
+                it.copy(
+                    search = it.search.copy(
+                        phase = phase,
+                        conversations = emptyList(),
+                        messages = emptyList(),
+                        messageError = null,
+                    ),
+                )
+            }
+            return
+        }
+        searchJob = viewModelScope.launch {
+            delay(SEARCH_DEBOUNCE_MS)
+            runSearch(q)
+        }
+    }
+
+    private fun runSearch(raw: String) {
+        val q = raw.trim()
+        if (q.length < InboxSearch.MIN_QUERY) return
+        val seq = ++searchSeq
+        _state.update { it.copy(search = it.search.copy(phase = SearchPhase.LOADING, messageError = null)) }
+        viewModelScope.launch {
+            val remote = runCatching { messages.search(q) }.getOrElse { error ->
+                RemoteSearch(messageError = NetErrors.friendly(error))
+            }
+            if (seq != searchSeq || _state.value.search.query.trim() != q) return@launch
+            lastRemote = remote
+            val merged = InboxSearch.merge(q, _state.value.conversations, remote.conversations, remote.messages)
+            val empty = merged.conversations.isEmpty() && merged.messages.isEmpty()
+            _state.update {
+                it.copy(
+                    search = it.search.copy(
+                        phase = if (empty) SearchPhase.EMPTY else SearchPhase.RESULTS,
+                        conversations = merged.conversations,
+                        messages = merged.messages,
+                        messageError = remote.messageError,
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * Account photo, re-checked every 30 minutes and when the screen resumes.
+     * An empty hash is tried once more after 15 seconds: the server fetches it
+     * in the background on a cold start.
+     */
+    fun refreshProfile(force: Boolean) {
+        val now = System.currentTimeMillis()
+        if (!force && profileCheckedAt != 0L && now - profileCheckedAt < PROFILE_TTL_MS) {
+            publishProfile()
+            return
+        }
+        if (profileBusy) return
+        profileBusy = true
+        viewModelScope.launch {
+            try {
+                val profile = runCatching { messages.profile() }.getOrNull()
+                if (profile != null) {
+                    profileCheckedAt = System.currentTimeMillis()
+                    if (profile.photoHash != profileHash) profileHash = profile.photoHash
+                    if (profile.photoHash.isBlank() && !profileRetriedEmpty) {
+                        profileRetriedEmpty = true
+                        viewModelScope.launch {
+                            delay(PROFILE_RETRY_MS)
+                            refreshProfile(force = true)
+                        }
+                    }
+                }
+            } finally {
+                profileBusy = false
+                publishProfile()
+            }
+        }
+    }
+
+    private fun publishProfile() {
+        val self = Participants.self(_state.value.conversations)
+        val name = Participants.profileName(self)
+        val origin = origin()
+        val photo = Participants.profilePhotoUrl(origin, profileHash)
+        _state.update {
+            it.copy(
+                profile = ProfileUi(
+                    photoUrl = photo,
+                    fallbackUrl = if (photo == null && self != null) Participants.selfAvatarUrl(origin, self) else null,
+                    initial = Participants.profileInitial(name),
+                    colorSeed = Participants.profileSeed(self, name),
+                    name = name,
+                ),
+            )
+        }
+    }
+
+    fun pin(conversation: ConversationDto, pinned: Boolean) {
+        viewModelScope.launch {
+            runCatching { messages.pin(conversation.conversationId, pinned) }
+                .onSuccess { response ->
+                    _state.update { state ->
+                        state.copy(
+                            conversations = state.conversations.map { item ->
+                                if (item.conversationId == conversation.conversationId) {
+                                    item.copy(
+                                        googlePinned = response.googlePinned,
+                                        localPinnedAtMs = response.localPinnedAtMs,
+                                    )
+                                } else {
+                                    item
+                                }
+                            },
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _state.update { it.copy(notice = NetErrors.friendly(error)) }
+                }
+        }
+    }
+
+    fun consumeNotice() {
+        _state.update { it.copy(notice = null) }
+    }
+
+    fun refresh(initial: Boolean = false) {
+        val gen = ++refreshGen
+        viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    loading = initial && it.conversations.isEmpty(),
+                    refreshing = !initial || it.conversations.isNotEmpty(),
+                )
+            }
+            runCatching { messages.conversations() }
+                .onSuccess { list ->
+                    failures.success()
+                    if (gen != refreshGen) return@onSuccess
+                    _state.update {
+                        it.copy(conversations = list, loading = false, refreshing = false, error = null)
+                    }
+                    publishProfile()
+                    val q = _state.value.search.query.trim()
+                    if (q.length >= InboxSearch.MIN_QUERY && _state.value.search.phase != SearchPhase.LOADING) {
+                        val merged = InboxSearch.merge(q, list, lastRemote.conversations, lastRemote.messages)
+                        val empty = merged.conversations.isEmpty() && merged.messages.isEmpty()
+                        _state.update { state ->
+                            state.copy(
+                                search = state.search.copy(
+                                    phase = if (empty) SearchPhase.EMPTY else SearchPhase.RESULTS,
+                                    conversations = merged.conversations,
+                                    messages = merged.messages,
+                                ),
+                            )
+                        }
+                    }
+                }
+                .onFailure { e ->
+                    val banner = failures.failure(NetErrors.friendly(e))
+                    _state.update {
+                        it.copy(loading = false, refreshing = false, error = banner)
+                    }
+                }
+        }
+    }
+
+    private fun scheduleRefresh() {
+        debounceJob?.cancel()
+        debounceJob = viewModelScope.launch { delay(150); refresh() }
+    }
+
+    /** Web app polls the list every ~8-12 s while the stream isn't live. */
+    private fun startPolling() {
+        pollJob?.cancel()
+        pollJob = viewModelScope.launch {
+            while (true) {
+                delay(10_000)
+                if (!sse.isLive()) { sse.ensureStarted(); refresh() }
+            }
+        }
+    }
+
+    private fun startSse() {
+        startPolling()
+        sseJob?.cancel()
+        sseJob = viewModelScope.launch {
+            sse.events.collect { event ->
+                when (event.type) {
+                    "conversations", "messages", "reconnected" -> scheduleRefresh()
+                }
+            }
+        }
+    }
+
+    companion object {
+        private const val SEARCH_DEBOUNCE_MS = 250L
+        private const val PROFILE_TTL_MS = 30L * 60L * 1000L
+        private const val PROFILE_RETRY_MS = 15_000L
+    }
+}
