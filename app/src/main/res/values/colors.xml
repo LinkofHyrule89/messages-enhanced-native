@@ -15,6 +15,7 @@
     <color name="brand">#3E6AE1</color>
     <color name="unread">#3E8BFF</color>
     <color name="conv_active">#1F2A3D</color>
-    <color name="topbar">#171A1F</color>
+    <color name="topbar">#1C1F24</color>
+    <color name="list_pane">#0E1014</color>
     <color name="search_mark">#66F5A524</color>
 </resources>
