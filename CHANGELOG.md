@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.6.2
+
+- Tablet: the conversation list card rounds only its top-left corner.
+- Silent updates (Android 12+): the updater installs new versions without a prompt, like Neko, and reopens the app. New Auto-update switch in Settings.
+- Note: silent updates only work once this app itself installed the current version. The first update from a manually installed APK (for example 0.6.1) still shows the normal Android install prompt.
+
 ## v0.6.1
 
 - Top app bar is taller (68dp) below the status bar instead of squeezing into it, with the title vertically centered.

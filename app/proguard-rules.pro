@@ -79,8 +79,9 @@
 -keep class com.google.firebase.components.** { *; }
 -keep class com.ubermicrostudios.messagesenhanced.nativeapp.push.MessagingService { *; }
 
-# PackageInstaller result receiver.
+# PackageInstaller result receiver, and the relaunch after a self-update.
 -keep class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateInstallReceiver { *; }
+-keep class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdatePackageReplacedReceiver { *; }
 
 # Coroutines. ServiceLoader entry points and atomic updaters must keep their names.
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}

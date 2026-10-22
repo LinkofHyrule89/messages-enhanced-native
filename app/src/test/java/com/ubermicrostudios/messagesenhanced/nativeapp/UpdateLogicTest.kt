@@ -1,7 +1,12 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp
 
+import android.content.Intent
+import android.os.Build
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.ReleaseParser
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.SemVer
+import com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateChecker
+import com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdatePolicy
+import com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateProgress
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -106,5 +111,57 @@ class UpdateLogicTest {
 
         assertNull(ReleaseParser.parse("""{"tag_name":"nightly","assets":[]}"""))
         assertNull(ReleaseParser.parse("not json"))
+    }
+
+    @Test
+    fun autoCheckIsDueEverySixHoursAndNotBefore() {
+        val interval = UpdatePolicy.CHECK_INTERVAL_MS
+        assertEquals(6L * 60L * 60L * 1000L, interval)
+        assertEquals(interval, UpdateChecker.CHECK_INTERVAL_MS)
+        assertTrue(UpdatePolicy.autoCheckDue(lastCheckAt = 0L, now = interval))
+        assertTrue(UpdatePolicy.autoCheckDue(lastCheckAt = 1_000L, now = 1_000L + interval))
+        assertFalse(UpdatePolicy.autoCheckDue(lastCheckAt = 0L, now = interval - 1L))
+        assertFalse(UpdatePolicy.autoCheckDue(lastCheckAt = 5_000L, now = 5_000L))
+        assertFalse(UpdatePolicy.autoCheckDue(lastCheckAt = 5_000L, now = 4_000L))
+    }
+
+    @Test
+    fun silentInstallAndDownloadedSourceFollowTheApiCutoff() {
+        assertFalse(UpdatePolicy.requestSilentInstall(Build.VERSION_CODES.R))
+        assertTrue(UpdatePolicy.requestSilentInstall(Build.VERSION_CODES.S))
+        assertTrue(UpdatePolicy.requestSilentInstall(34))
+        assertFalse(UpdatePolicy.markDownloadedFileSource(33))
+        assertTrue(UpdatePolicy.markDownloadedFileSource(Build.VERSION_CODES.UPSIDE_DOWN_CAKE))
+        assertTrue(UpdatePolicy.markDownloadedFileSource(35))
+    }
+
+    @Test
+    fun downloadPercentClampsAndTreatsAnUnknownLengthAsIndeterminate() {
+        assertNull(UpdatePolicy.downloadPercent(read = 10L, total = 0L))
+        assertNull(UpdatePolicy.downloadPercent(read = 10L, total = -1L))
+        assertEquals(0, UpdatePolicy.downloadPercent(read = 0L, total = 100L))
+        assertEquals(0, UpdatePolicy.downloadPercent(read = -5L, total = 100L))
+        assertEquals(33, UpdatePolicy.downloadPercent(read = 1L, total = 3L))
+        assertEquals(50, UpdatePolicy.downloadPercent(read = 50L, total = 100L))
+        assertEquals(100, UpdatePolicy.downloadPercent(read = 100L, total = 100L))
+        assertEquals(100, UpdatePolicy.downloadPercent(read = 250L, total = 100L))
+        assertEquals(40, UpdateProgress.Downloading(read = 40L, total = 100L).percent)
+        assertNull(UpdateProgress.Downloading(read = 40L, total = -1L).percent)
+    }
+
+    @Test
+    fun relaunchOnlyAfterAnUpdateThisAppStarted() {
+        assertEquals(Intent.ACTION_MY_PACKAGE_REPLACED, UpdatePolicy.PACKAGE_REPLACED_ACTION)
+        val replaced = UpdatePolicy.PACKAGE_REPLACED_ACTION
+        assertTrue(UpdatePolicy.shouldRelaunch(replaced, triggeredByApp = true))
+        assertFalse(UpdatePolicy.shouldRelaunch(replaced, triggeredByApp = false))
+        assertFalse(UpdatePolicy.shouldRelaunch(Intent.ACTION_BOOT_COMPLETED, triggeredByApp = true))
+        assertFalse(UpdatePolicy.shouldRelaunch(action = null, triggeredByApp = true))
+    }
+
+    @Test
+    fun autoUpdateSkipsTheOfferAndTheDefaultKeepsIt() {
+        assertFalse(UpdatePolicy.installsWithoutOffer(autoUpdate = false))
+        assertTrue(UpdatePolicy.installsWithoutOffer(autoUpdate = true))
     }
 }

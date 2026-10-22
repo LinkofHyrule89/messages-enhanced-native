@@ -77,6 +77,10 @@ class SettingsActivity : SessionActivity() {
         binding.testNotification.setOnClickListener { viewModel.sendTest() }
         binding.refreshEverything.setOnClickListener { viewModel.refreshEverything() }
         binding.logout.setOnClickListener { viewModel.logout() }
+        binding.autoUpdate.isChecked = updateChecker.autoUpdate
+        binding.autoUpdate.setOnCheckedChangeListener { _, checked ->
+            updateChecker.autoUpdate = checked
+        }
         binding.checkUpdates.setOnClickListener { updatePrompts.checkFromSettings(binding.checkUpdates) }
         binding.grokEnable.setOnCheckedChangeListener { _, checked ->
             if (renderingGrok || checked == viewModel.state.value.grokEnabled) return@setOnCheckedChangeListener

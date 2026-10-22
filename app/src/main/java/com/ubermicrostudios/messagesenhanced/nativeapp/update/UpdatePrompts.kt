@@ -10,15 +10,12 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.ubermicrostudios.messagesenhanced.nativeapp.R
 import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.DialogUpdateProgressBinding
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * Update dialogs for the activity that is currently in front.
  * Launch checks are quiet except when a newer release exists.
+ * Auto-update downloads and installs with no dialog; the notification carries progress.
  */
 class UpdatePrompts(
     private val activity: AppCompatActivity,
@@ -26,36 +23,63 @@ class UpdatePrompts(
 ) {
     private var launchChecked = false
     private var manualBusy = false
-    private var downloadJob: Job? = null
     private var progressDialog: AlertDialog? = null
+    private var progressBinding: DialogUpdateProgressBinding? = null
     private var offerDialog: AlertDialog? = null
     private var closingDialogs = false
 
-    fun onHostResume() {
-        val release = checker.awaitingPermission ?: return
-        if (activity.isFinishing || activity.isDestroyed) return
-        if (!checker.canInstallPackages()) {
-            checker.awaitingPermission = null
-            toast(activity.getString(R.string.update_install_permission))
-            return
+    private val progressListener: (UpdateProgress) -> Unit = { progress ->
+        if (!activity.isDestroyed) renderProgress(progress)
+    }
+
+    private val dismissProgress: () -> Unit = {
+        if (!activity.isDestroyed) {
+            progressDialog?.dismiss()
+            progressDialog = null
+            progressBinding = null
         }
-        checker.awaitingPermission = null
-        startDownload(release)
+    }
+
+    init {
+        checker.addProgressListener(progressListener)
+        UpdateEvents.addDismisser(dismissProgress)
+    }
+
+    fun onHostResume() {
+        if (activity.isFinishing || activity.isDestroyed) return
+        val waiting = checker.awaitingPermission
+        if (waiting != null) {
+            if (!checker.canInstallPackages()) {
+                checker.awaitingPermission = null
+                toast(activity.getString(R.string.update_install_permission))
+            } else {
+                checker.awaitingPermission = null
+                startDownload(waiting.release, waiting.showDialog)
+            }
+        }
+        if (checker.installInProgress() && checker.progressDialogRequested) {
+            ensureProgressDialog()
+        }
     }
 
     fun checkOnLaunch() {
         if (activity.isFinishing) return
+        if (checker.installInProgress()) {
+            launchChecked = true
+            if (checker.progressDialogRequested) ensureProgressDialog()
+            return
+        }
         val waiting = checker.pendingOffer
         if (waiting != null) {
             launchChecked = true
-            showOffer(waiting)
+            presentFound(waiting)
             return
         }
         if (launchChecked) return
         launchChecked = true
         activity.lifecycleScope.launch {
             val result = checker.check(force = false)
-            if (result is UpdateResult.Available) showOffer(result.release)
+            if (result is UpdateResult.Available) presentFound(result.release)
         }
     }
 
@@ -79,10 +103,22 @@ class UpdatePrompts(
 
     fun dismiss() {
         closingDialogs = true
+        checker.removeProgressListener(progressListener)
+        UpdateEvents.removeDismisser(dismissProgress)
         progressDialog?.dismiss()
         progressDialog = null
+        progressBinding = null
         offerDialog?.dismiss()
         offerDialog = null
+    }
+
+    private fun presentFound(release: AppRelease) {
+        if (activity.isFinishing || activity.isDestroyed) return
+        if (UpdatePolicy.installsWithoutOffer(checker.autoUpdate)) {
+            beginInstall(release, showDialog = false)
+        } else {
+            showOffer(release)
+        }
     }
 
     private fun showOffer(release: AppRelease) {
@@ -92,7 +128,7 @@ class UpdatePrompts(
         val dialog = MaterialAlertDialogBuilder(activity)
             .setTitle(release.tag)
             .setMessage(notes)
-            .setPositiveButton(R.string.update_action) { _, _ -> beginInstall(release) }
+            .setPositiveButton(R.string.update_action) { _, _ -> beginInstall(release, showDialog = true) }
             .setNegativeButton(R.string.update_later) { _, _ -> checker.pendingOffer = null }
             .setOnCancelListener {
                 if (!closingDialogs) checker.pendingOffer = null
@@ -102,10 +138,17 @@ class UpdatePrompts(
         dialog.show()
     }
 
-    private fun beginInstall(release: AppRelease) {
+    private fun beginInstall(release: AppRelease, showDialog: Boolean) {
         checker.pendingOffer = null
+        if (checker.installInProgress()) {
+            if (showDialog) {
+                checker.progressDialogRequested = true
+                ensureProgressDialog()
+            }
+            return
+        }
         if (!checker.canInstallPackages()) {
-            checker.awaitingPermission = release
+            checker.awaitingPermission = AwaitingInstall(release, showDialog)
             try {
                 activity.startActivity(checker.manageUnknownSourcesIntent())
             } catch (_: ActivityNotFoundException) {
@@ -114,46 +157,58 @@ class UpdatePrompts(
             }
             return
         }
-        startDownload(release)
+        startDownload(release, showDialog)
     }
 
-    private fun startDownload(release: AppRelease) {
-        if (downloadJob?.isActive == true) return
+    private fun startDownload(release: AppRelease, showDialog: Boolean) {
+        if (showDialog) ensureProgressDialog()
+        checker.startInstall(release, showDialog)
+    }
+
+    private fun ensureProgressDialog() {
+        if (progressDialog?.isShowing == true) return
+        if (activity.isFinishing || activity.isDestroyed) return
         val binding = DialogUpdateProgressBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity)
             .setTitle(R.string.update_downloading)
             .setView(binding.root)
             .setCancelable(false)
-            .setNegativeButton(R.string.cancel) { _, _ -> downloadJob?.cancel() }
+            .setNegativeButton(R.string.cancel) { _, _ -> checker.cancelInstall() }
             .create()
+        progressBinding = binding
         progressDialog = dialog
+        dialog.setOnDismissListener {
+            if (progressDialog === dialog) {
+                progressDialog = null
+                progressBinding = null
+            }
+        }
         dialog.show()
-        downloadJob = activity.lifecycleScope.launch {
-            try {
-                val file = checker.download(release) { read, total ->
-                    if (activity.isDestroyed) return@download
-                    if (total > 0) {
-                        val percent = ((read * 100) / total).toInt().coerceIn(0, 100)
-                        binding.progress.isIndeterminate = false
-                        binding.progress.progress = percent
-                        binding.progressText.text = activity.getString(R.string.update_progress, percent)
-                    } else {
-                        binding.progress.isIndeterminate = true
-                        binding.progressText.text = activity.getString(R.string.update_progress_unknown)
-                    }
+        checker.latestProgress?.let { renderProgress(it) }
+    }
+
+    private fun renderProgress(progress: UpdateProgress) {
+        val dialog = progressDialog ?: return
+        val binding = progressBinding ?: return
+        if (!dialog.isShowing || activity.isDestroyed) return
+        when (progress) {
+            is UpdateProgress.Downloading -> {
+                dialog.setTitle(R.string.update_downloading)
+                val percent = progress.percent
+                if (percent != null) {
+                    binding.progress.isIndeterminate = false
+                    binding.progress.progress = percent
+                    binding.progressText.text = activity.getString(R.string.update_progress, percent)
+                } else {
+                    binding.progress.isIndeterminate = true
+                    binding.progressText.text = activity.getString(R.string.update_progress_unknown)
                 }
-                if (!activity.isDestroyed) dialog.dismiss()
-                withContext(Dispatchers.IO) { checker.install(file) }
-            } catch (e: CancellationException) {
-                if (!activity.isDestroyed) dialog.dismiss()
-                throw e
-            } catch (e: Exception) {
-                if (!activity.isDestroyed) dialog.dismiss()
-                val detail = e.message?.takeIf { it.isNotBlank() }
-                    ?: activity.getString(R.string.update_failed_generic)
-                toast(activity.getString(R.string.update_failed, detail))
-            } finally {
-                if (progressDialog === dialog) progressDialog = null
+            }
+            UpdateProgress.Installing -> {
+                dialog.setTitle(R.string.update_installing)
+                binding.progress.isIndeterminate = true
+                binding.progressText.text = activity.getString(R.string.update_installing)
+                dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.isEnabled = false
             }
         }
     }

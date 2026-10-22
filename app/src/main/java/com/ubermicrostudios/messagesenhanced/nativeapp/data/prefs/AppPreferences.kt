@@ -42,6 +42,19 @@ class AppPreferences @Inject constructor(
         get() = settings.getLong(KEY_UPDATE_CHECK_AT, 0L)
         set(value) = settings.edit { putLong(KEY_UPDATE_CHECK_AT, value) }
 
+    /** Off until the user turns it on in Settings. */
+    var autoUpdate: Boolean
+        get() = settings.getBoolean(KEY_AUTO_UPDATE, false)
+        set(value) = settings.edit { putBoolean(KEY_AUTO_UPDATE, value) }
+
+    /**
+     * Written with commit before the install session is committed. The update
+     * kills the process, so apply() could be lost before it reaches disk.
+     */
+    var relaunchAfterUpdate: Boolean
+        get() = readRelaunchAfterUpdate(appContext)
+        set(value) = writeRelaunchAfterUpdate(appContext, value)
+
     var notificationsEnabled: Boolean
         get() = settings.getBoolean(KEY_NOTIFICATIONS, false)
         set(value) = settings.edit { putBoolean(KEY_NOTIFICATIONS, value) }
@@ -68,12 +81,26 @@ class AppPreferences @Inject constructor(
     }
 
     companion object {
-        private const val SETTINGS_FILE = "me_native_settings"
+        internal const val SETTINGS_FILE = "me_native_settings"
         private const val SECURE_FILE = "me_native_secure"
         private const val KEY_SERVER_URL = "server_url"
         private const val KEY_NOTIFICATIONS = "notifications_enabled"
         private const val KEY_HIDE_TEXT = "hide_message_text"
         private const val KEY_COOKIES = "cookies"
         private const val KEY_UPDATE_CHECK_AT = "update_check_at"
+        internal const val KEY_AUTO_UPDATE = "auto_update"
+        internal const val KEY_RELAUNCH_AFTER_UPDATE = "relaunch_after_update"
+
+        fun readRelaunchAfterUpdate(context: Context): Boolean {
+            return context.applicationContext
+                .getSharedPreferences(SETTINGS_FILE, Context.MODE_PRIVATE)
+                .getBoolean(KEY_RELAUNCH_AFTER_UPDATE, false)
+        }
+
+        fun writeRelaunchAfterUpdate(context: Context, enabled: Boolean) {
+            context.applicationContext
+                .getSharedPreferences(SETTINGS_FILE, Context.MODE_PRIVATE)
+                .edit(commit = true) { putBoolean(KEY_RELAUNCH_AFTER_UPDATE, enabled) }
+        }
     }
 }
