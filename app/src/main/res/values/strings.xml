@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Messages Enhanced Native</string>
+    <string name="app_name">Messages Enhanced</string>
     <string name="login_title">Messages Enhanced</string>
     <string name="login_subtitle">Sign in with your server secret</string>
     <string name="server_url">Server URL</string>

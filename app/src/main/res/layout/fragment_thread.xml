@@ -52,10 +52,10 @@
         android:background="@drawable/bg_thread_header"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="4dp"
-        android:paddingTop="4dp"
-        android:paddingEnd="4dp"
-        android:paddingBottom="18dp">
+        android:paddingStart="8dp"
+        android:paddingTop="14dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="22dp">
 
         <ImageButton
             android:id="@+id/back"

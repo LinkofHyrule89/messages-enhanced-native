@@ -41,7 +41,7 @@ class PushRepository @Inject constructor(
             val resp = api.pushSubscribe(
                 PushSubscribeRequest(
                     endpoint = endpoint,
-                    label = "Messages Enhanced Native",
+                    label = "Messages Enhanced (Android)",
                     hideText = hideText,
                 ),
             )
@@ -74,7 +74,7 @@ class PushRepository @Inject constructor(
             api.pushSubscribe(
                 PushSubscribeRequest(
                     endpoint = Push.fcmEndpoint(token),
-                    label = "Messages Enhanced Native",
+                    label = "Messages Enhanced (Android)",
                     hideText = prefs.hideMessageText,
                 ),
             )

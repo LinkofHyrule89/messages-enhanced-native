@@ -62,6 +62,7 @@ object Insets {
         onChromeHeight: (Int) -> Unit,
     ) {
         val appBase = padsOf(appBar)
+        val appBarHeight = appBar.layoutParams.height.takeIf { it > 0 } ?: appBar.resources.getDimensionPixelSize(com.ubermicrostudios.messagesenhanced.nativeapp.R.dimen.app_bar_height)
         val chromeBase = padsOf(chrome)
         val bases = scrolling.map { padsOf(it) }
         val fabBase = fab?.let { marginsOf(it) }
@@ -99,6 +100,8 @@ object Insets {
             ime = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
             val barPad = EdgeChrome.overlay(appBase, left, top, right, insetEnd = true)
             appBar.setPadding(barPad.left, barPad.top, barPad.right, barPad.bottom)
+            // The bar keeps its full height below the status bar instead of squeezing into it.
+            appBar.layoutParams = appBar.layoutParams.apply { height = appBarHeight + barPad.top }
             val chromePad = EdgeChrome.Pads(
                 chromeBase.left + left,
                 chromeBase.top,

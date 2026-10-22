@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.6.1
+
+- Top app bar is taller (68dp) below the status bar instead of squeezing into it, with the title vertically centered.
+- More breathing room in the conversation header.
+- App name is now just "Messages Enhanced" (same package, updates install in place).
+
 ## v0.6.0
 
 - In-app updater. The app checks GitHub Releases on launch (at most every six hours) and from Settings, then downloads the APK with progress, verifies the size and the sha256 digest when one is published, and installs it with the system package installer.
