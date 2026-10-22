@@ -4,6 +4,7 @@
 
 - Top app bar is taller (68dp) below the status bar instead of squeezing into it, with the title vertically centered.
 - More breathing room in the conversation header.
+- Conversation list "You:" receipts use the web app's circled-check icons (sent, delivered, read).
 - Bell button in the conversation header mutes or unmutes notifications (replaces the lock icon; stays in sync with the ⋮ menu).
 - App name is now just "Messages Enhanced" (same package, updates install in place).
 

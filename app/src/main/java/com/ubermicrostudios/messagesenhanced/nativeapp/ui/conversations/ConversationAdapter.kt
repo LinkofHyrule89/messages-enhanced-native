@@ -131,8 +131,12 @@ class ConversationAdapter(
                 } else {
                     b.statusIcon.isVisible = true
                     b.statusIcon.setImageResource(kind.icon())
-                    val tintColor = if (kind == ReceiptKind.READ) colors.accent else kind.tint(context)
-                    b.statusIcon.imageTintList = ColorStateList.valueOf(tintColor)
+                    // Web list icons: rings in the muted text color; read = filled grey circles (own colors).
+                    b.statusIcon.imageTintList = when (kind) {
+                        ReceiptKind.READ -> null
+                        ReceiptKind.SENT, ReceiptKind.DELIVERED -> ColorStateList.valueOf(muted)
+                        else -> ColorStateList.valueOf(kind.tint(context))
+                    }
                     b.statusIcon.contentDescription = kind.label
                 }
             }
@@ -187,7 +191,7 @@ internal fun ReceiptKind.icon(): Int = when (this) {
     ReceiptKind.SENDING -> R.drawable.ic_status_sending
     ReceiptKind.SENT -> R.drawable.ic_status_sent
     ReceiptKind.DELIVERED -> R.drawable.ic_status_delivered
-    ReceiptKind.READ -> R.drawable.ic_status_delivered
+    ReceiptKind.READ -> R.drawable.ic_status_read
     ReceiptKind.FAILED -> R.drawable.ic_status_failed
 }
 
