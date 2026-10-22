@@ -21,12 +21,9 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       # Firebase is configured at runtime from the server. No google-services.json is required.
       - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses >/dev/null || true
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true  # SDK is preinstalled on ubuntu-latest
 
       - name: Decode keystore
         env:
