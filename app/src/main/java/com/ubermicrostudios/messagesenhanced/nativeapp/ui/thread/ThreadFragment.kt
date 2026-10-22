@@ -160,7 +160,8 @@ class ThreadFragment : Fragment() {
         binding.attach.imageTintList = muted
         binding.emoji.imageTintList = muted
         binding.gallery.imageTintList = muted
-        binding.e2eeLock.imageTintList = muted
+        binding.muteToggle.imageTintList = ColorStateList.valueOf(requireContext().getColor(R.color.text))
+        binding.muteToggle.setOnClickListener { viewModel.toggleMute() }
         binding.back.isVisible = !twoPane
         binding.back.setOnClickListener { requireActivity().onBackPressedDispatcher.onBackPressed() }
         binding.overflow.setOnClickListener { showMenu() }
@@ -335,10 +336,10 @@ class ThreadFragment : Fragment() {
         binding.composer.isEnabled = !state.sending
         binding.typing.isVisible = state.typingLabel.isNotBlank()
         binding.typing.text = state.typingLabel
-        val encrypted = state.encryption.e2ee ||
-            Encryption.protocolEncrypted(state.displayProtocol) ||
-            Encryption.protocolEncrypted(state.protocol)
-        binding.e2eeLock.isVisible = encrypted
+        val isMuted = state.notificationMode == "muted"
+        binding.muteToggle.setImageResource(if (isMuted) R.drawable.ic_bell_off else R.drawable.ic_bell)
+        binding.muteToggle.contentDescription = getString(if (isMuted) R.string.menu_unmute else R.string.menu_mute)
+        binding.muteToggle.alpha = if (isMuted) 0.7f else 1f
         val proto = state.protocol.ifBlank { state.displayProtocol }.trim()
         binding.composer.hint = when {
             proto.equals("RCS", ignoreCase = true) -> getString(R.string.composer_hint_rcs)

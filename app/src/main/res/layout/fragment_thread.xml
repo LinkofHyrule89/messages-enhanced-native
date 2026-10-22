@@ -124,14 +124,13 @@
             android:textSize="18sp"
             android:textStyle="bold" />
 
-        <ImageView
-            android:id="@+id/e2ee_lock"
-            android:layout_width="16dp"
-            android:layout_height="16dp"
-            android:layout_marginEnd="4dp"
-            android:contentDescription="@string/e2ee"
-            android:src="@drawable/ic_lock"
-            android:visibility="gone" />
+        <ImageButton
+            android:id="@+id/mute_toggle"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/menu_mute"
+            android:src="@drawable/ic_bell" />
 
         <ImageButton
             android:id="@+id/overflow"
