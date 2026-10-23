@@ -18,6 +18,10 @@ Application id `com.ubermicrostudios.messagesenhanced.nativeapp`. Minimum SDK 26
 - Settings for the server URL, notifications, refresh, and @Grok / @Groq.
 - In-app updates from GitHub Releases.
 
+## Companion server
+
+This app is a client only. It needs a running [Messages Enhanced](https://github.com/LinkofHyrule89/messages-enhanced) server, the self-hosted Go server and web app that pairs with Google Messages. Set up that server first, then sign in here with its URL and secret. The native app's features track the server's API, so keep the server reasonably up to date.
+
 ## Requirements
 
 - Android 8.0 or newer

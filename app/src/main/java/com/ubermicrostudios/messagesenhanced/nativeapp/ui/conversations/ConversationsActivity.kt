@@ -9,6 +9,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
@@ -22,7 +23,9 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import coil.load
 import coil.transform.CircleCropTransformation
 import com.ubermicrostudios.messagesenhanced.nativeapp.R
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.cache.InboxCache
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDto
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.AppPreferences
 import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ActivityConversationsBinding
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.Insets
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.SessionActivity
@@ -35,6 +38,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread.ThreadViewModel
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateChecker
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdatePrompts
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ConversationOrder
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.LastThreadRestore
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.HealthBanner
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
@@ -46,6 +50,8 @@ import javax.inject.Inject
 class ConversationsActivity : SessionActivity() {
 
     @Inject lateinit var updateChecker: UpdateChecker
+    @Inject lateinit var prefs: AppPreferences
+    @Inject lateinit var inboxCache: InboxCache
 
     private lateinit var binding: ActivityConversationsBinding
     private lateinit var updatePrompts: UpdatePrompts
@@ -57,6 +63,8 @@ class ConversationsActivity : SessionActivity() {
     private var threadServerError = false
     private var bannerPhase = BannerPhase.HIDDEN
     private var bannerGeneration = 0
+    /** Holds the splash until a tablet cold start has the cached thread ready to draw. */
+    private var restoreGate = false
 
     private val twoPane: Boolean
         get() = binding.threadContainer != null
@@ -73,7 +81,9 @@ class ConversationsActivity : SessionActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
+        splash.setKeepOnScreenCondition { restoreGate }
         if (!viewModel.hasSession()) {
             goToLogin()
             return
@@ -207,6 +217,7 @@ class ConversationsActivity : SessionActivity() {
         }
 
         handleOpenIntent(intent)
+        restoreLastThread(savedInstanceState)
     }
 
     override fun onResume() {
@@ -266,7 +277,7 @@ class ConversationsActivity : SessionActivity() {
         binding.empty.isVisible = when {
             state.search.phase == SearchPhase.SHORT -> true
             state.search.phase == SearchPhase.EMPTY -> true
-            !searching && !state.loading && state.conversations.isEmpty() -> true
+            !searching && state.ready && !state.loading && state.conversations.isEmpty() -> true
             else -> false
         }
         binding.empty.text = when {
@@ -471,7 +482,7 @@ class ConversationsActivity : SessionActivity() {
         dialog.show()
     }
 
-    /** Tablet: leave the empty pane when the open conversation was just trashed. */
+    /** Tablet: leave the empty pane when the open conversation was just archived or trashed. */
     private fun closeThreadPane(conversationId: String) {
         if (binding.threadContainer == null) return
         val fragment = supportFragmentManager.findFragmentById(R.id.thread_container)
@@ -484,13 +495,75 @@ class ConversationsActivity : SessionActivity() {
         threadServerError = false
     }
 
-    private fun openThread(conv: ConversationDto, jumpId: String? = null, jumpTs: Long = 0L) {
+    /**
+     * Tablet cold start: put the last opened conversation in the split pane from
+     * the inbox cache, then let the thread refresh in the background. Phones stay
+     * on the list. A notification intent and a restored activity win over this.
+     */
+    private fun restoreLastThread(savedInstanceState: Bundle?) {
+        val decision = LastThreadRestore.decide(
+            twoPane = twoPane,
+            hasSavedState = savedInstanceState != null,
+            openingFromIntent = intent?.action == ACTION_OPEN_THREAD,
+            lastId = prefs.lastSelectedConversationId(),
+            cached = inboxCache.peekConversations(),
+        )
+        when (decision) {
+            LastThreadRestore.Decision.Skip -> Unit
+            is LastThreadRestore.Decision.Open -> {
+                if (!inboxCache.peekMessages(decision.conversation.conversationId).isNullOrEmpty()) {
+                    openThread(decision.conversation, immediate = true)
+                } else {
+                    restoreGate = true
+                    lifecycleScope.launch {
+                        try {
+                            openCachedThread(decision.conversation)
+                        } finally {
+                            restoreGate = false
+                        }
+                    }
+                }
+            }
+            LastThreadRestore.Decision.WaitForCache -> {
+                restoreGate = true
+                val id = prefs.lastSelectedConversationId()
+                lifecycleScope.launch {
+                    try {
+                        val next = LastThreadRestore.decide(
+                            twoPane = true,
+                            hasSavedState = false,
+                            openingFromIntent = intent?.action == ACTION_OPEN_THREAD,
+                            lastId = id,
+                            cached = inboxCache.readConversations(),
+                        )
+                        val conversation = (next as? LastThreadRestore.Decision.Open)?.conversation ?: return@launch
+                        openCachedThread(conversation)
+                    } finally {
+                        restoreGate = false
+                    }
+                }
+            }
+        }
+    }
+
+    /** Loads this chat's saved messages, then attaches the pane so the first frame has them. */
+    private suspend fun openCachedThread(conversation: ConversationDto) {
+        if (inboxCache.peekMessages(conversation.conversationId).isNullOrEmpty()) {
+            inboxCache.readMessages(conversation.conversationId)
+        }
+        if (supportFragmentManager.isStateSaved) return
+        if (supportFragmentManager.findFragmentById(R.id.thread_container) != null) return
+        openThread(conversation, immediate = true)
+    }
+
+    private fun openThread(conv: ConversationDto, jumpId: String? = null, jumpTs: Long = 0L, immediate: Boolean = false) {
         viewModel.select(conv.conversationId)
         adapter.selectedId = conv.conversationId
+        if (conv.conversationId.isNotBlank()) prefs.setLastSelectedConversationId(conv.conversationId)
         if (twoPane) {
-            supportFragmentManager.beginTransaction()
+            val transaction = supportFragmentManager.beginTransaction()
                 .replace(R.id.thread_container, ThreadFragment.newInstance(conv, jumpId, jumpTs))
-                .commit()
+            if (immediate && !supportFragmentManager.isStateSaved) transaction.commitNow() else transaction.commit()
             binding.threadPlaceholder?.isVisible = false
         } else {
             startActivity(

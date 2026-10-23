@@ -8,6 +8,10 @@ import androidx.security.crypto.MasterKey
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.JsonConfig
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.StoredCookie
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -20,6 +24,11 @@ class AppPreferences @Inject constructor(
 
     private val settings: SharedPreferences =
         appContext.getSharedPreferences(SETTINGS_FILE, Context.MODE_PRIVATE)
+
+    private val lock = Any()
+    private val writer = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+    private var lastSelectedLoaded = false
+    private var lastSelectedId = ""
 
     private val secure: SharedPreferences by lazy {
         val key = MasterKey.Builder(appContext)
@@ -80,6 +89,53 @@ class AppPreferences @Inject constructor(
         secure.edit { remove(KEY_COOKIES) }
     }
 
+    /**
+     * Conversation last opened in the list. The disk write runs off the main thread.
+     * Tablet cold start reads this to put that chat back in the split pane.
+     */
+    fun lastSelectedConversationId(): String = synchronized(lock) {
+        ensureLastSelectedLocked()
+        lastSelectedId
+    }
+
+    fun setLastSelectedConversationId(conversationId: String?) {
+        val value = conversationId?.trim().orEmpty()
+        synchronized(lock) {
+            lastSelectedId = value
+            lastSelectedLoaded = true
+        }
+        enqueueLastSelectedWrite()
+    }
+
+    /** Drops the saved id when that conversation is archived or moved to trash. */
+    fun clearLastSelectedConversationId(conversationId: String) {
+        val id = conversationId.trim()
+        if (id.isBlank()) return
+        synchronized(lock) {
+            ensureLastSelectedLocked()
+            if (lastSelectedId != id) return
+            lastSelectedId = ""
+        }
+        enqueueLastSelectedWrite()
+    }
+
+    private fun ensureLastSelectedLocked() {
+        if (lastSelectedLoaded) return
+        lastSelectedId = settings.getString(KEY_LAST_CONVERSATION, null).orEmpty()
+        lastSelectedLoaded = true
+    }
+
+    private fun enqueueLastSelectedWrite() {
+        writer.launch {
+            val value = synchronized(lock) { lastSelectedId }
+            runCatching {
+                settings.edit(commit = true) {
+                    if (value.isBlank()) remove(KEY_LAST_CONVERSATION) else putString(KEY_LAST_CONVERSATION, value)
+                }
+            }
+        }
+    }
+
     companion object {
         internal const val SETTINGS_FILE = "me_native_settings"
         private const val SECURE_FILE = "me_native_secure"
@@ -90,6 +146,7 @@ class AppPreferences @Inject constructor(
         private const val KEY_UPDATE_CHECK_AT = "update_check_at"
         internal const val KEY_AUTO_UPDATE = "auto_update"
         internal const val KEY_RELAUNCH_AFTER_UPDATE = "relaunch_after_update"
+        private const val KEY_LAST_CONVERSATION = "last_selected_conversation_id"
 
         fun readRelaunchAfterUpdate(context: Context): Boolean {
             return context.applicationContext

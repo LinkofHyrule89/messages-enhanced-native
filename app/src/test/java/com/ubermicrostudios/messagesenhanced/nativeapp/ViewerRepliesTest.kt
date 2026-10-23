@@ -1,11 +1,13 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp
 
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.MessageDto
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ParticipantDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ViewerGallery
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ViewerReplies
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 class ViewerRepliesTest {
@@ -85,11 +87,34 @@ class ViewerRepliesTest {
         val first = message(id = "a", mime = "image/jpeg", at = 2, local = "/cache/a.jpg")
         val video = message(id = "v", mime = "video/mp4", mediaId = "v", at = 3)
         val second = message(id = "b", mime = "image/png", at = 4)
-        val messages = listOf(second, text, video, first)
+        val gif = message(id = "g", mime = "image/gif", at = 5)
+        val messages = listOf(second, text, video, gif, first)
         val url = { message: MessageDto -> "https://messages.example/api/media/${message.messageId}" }
         val images = ViewerGallery.images(messages, url)
-        assertEquals(listOf("a", "b"), images.map { it.messageId })
+        assertEquals(listOf("a", "b", "g"), images.map { it.messageId })
         assertEquals(1, ViewerGallery.startIndex(images, "b"))
+        assertEquals(2, ViewerGallery.startIndex(images, "g"))
         assertEquals(0, ViewerGallery.startIndex(images, "missing"))
+    }
+
+    @Test
+    fun senderParticipant_matchesMeThenDigitsThenName() {
+        val me = ParticipantDto(name = "Me", number = "+15555550100", isMe = true)
+        val byPhone = ParticipantDto(name = "Avery", phone = "+1 (555) 555-0199")
+        val byName = ParticipantDto(name = "Blair")
+        val people = listOf(byName, byPhone, me)
+
+        val mine = message(id = "m", fromMe = true, sender = "Blair")
+        assertSame(me, ViewerReplies.senderParticipant(people, mine))
+
+        val digits = MessageDto(messageId = "d", senderNumber = "555-555-0199", senderName = "Someone Else")
+        assertSame(byPhone, ViewerReplies.senderParticipant(people, digits))
+
+        val named = message(id = "n", sender = "blair")
+        assertSame(byName, ViewerReplies.senderParticipant(people, named))
+
+        val unknown = message(id = "u", sender = "Casey")
+        assertNull(ViewerReplies.senderParticipant(people, unknown))
+        assertNull(ViewerReplies.senderParticipant(emptyList(), mine))
     }
 }

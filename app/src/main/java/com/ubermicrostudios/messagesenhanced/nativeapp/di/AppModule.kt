@@ -1,8 +1,15 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.di
 
 import android.content.Context
+import android.os.Build
 import coil.ImageLoader
+import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.JsonConfig
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.UrlStringKeyer
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.UrlUriKeyer
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.AuthInterceptor
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.MessagesApi
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.PersistentCookieJar
@@ -104,5 +111,27 @@ object AppModule {
     ): ImageLoader = ImageLoader.Builder(context)
         .okHttpClient(client)
         .crossfade(true)
+        .memoryCache {
+            MemoryCache.Builder(context)
+                .maxSizePercent(0.20)
+                .build()
+        }
+        .diskCache {
+            DiskCache.Builder()
+                .directory(context.cacheDir.resolve("image_cache"))
+                .maxSizeBytes(250L * 1024 * 1024)
+                .build()
+        }
+        // Avatar and media responses are authenticated and often marked uncacheable.
+        .respectCacheHeaders(false)
+        .components {
+            if (Build.VERSION.SDK_INT >= 28) {
+                add(ImageDecoderDecoder.Factory())
+            } else {
+                add(GifDecoder.Factory())
+            }
+            add(UrlStringKeyer())
+            add(UrlUriKeyer())
+        }
         .build()
 }

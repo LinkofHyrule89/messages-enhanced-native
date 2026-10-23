@@ -13,12 +13,30 @@
         <item name="android:windowBackground">@color/bg</item>
         <item name="colorSurface">@color/panel</item>
         <item name="colorOnSurface">@color/text</item>
+        <item name="colorSurfaceContainer">@color/panel2</item>
+        <item name="colorOnSurfaceVariant">@color/muted</item>
+        <item name="colorOutlineVariant">@color/line</item>
         <item name="android:textColor">@color/text</item>
         <item name="toolbarStyle">@style/Widget.MessagesEnhanced.Toolbar</item>
     </style>
 
     <style name="Theme.MessagesEnhancedNative.Viewer" parent="Theme.MessagesEnhancedNative">
         <item name="android:windowBackground">@android:color/black</item>
+    </style>
+
+    <style name="Theme.MessagesEnhancedNative.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/bg</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.MessagesEnhancedNative</item>
+    </style>
+
+    <style name="Theme.MessagesEnhancedNative.Share" parent="Theme.MessagesEnhancedNative">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowBackground">?attr/colorSurface</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
     <style name="Widget.MessagesEnhanced.Toolbar" parent="Widget.Material3.Toolbar">

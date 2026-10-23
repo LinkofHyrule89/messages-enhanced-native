@@ -2,7 +2,9 @@ package com.ubermicrostudios.messagesenhanced.nativeapp.ui.conversations
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.cache.InboxCache
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDto
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.AppPreferences
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.SseClient
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.TypingTracker
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.AuthRepository
@@ -17,6 +19,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.util.NetErrors
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ThemeColors
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,6 +63,8 @@ data class ConversationsUiState(
     val profile: ProfileUi = ProfileUi(),
     /** Google / VPN connection. Null when healthy. Hidden in the UI while [error] is showing. */
     val healthBanner: HealthBanner.Banner? = null,
+    /** False until the on-disk conversation cache has been checked. */
+    val ready: Boolean = false,
 )
 
 @HiltViewModel
@@ -70,9 +75,18 @@ class ConversationsViewModel @Inject constructor(
     private val typing: TypingTracker,
     private val themes: ThemeRepository,
     private val health: HealthRepository,
+    private val inboxCache: InboxCache,
+    private val prefs: AppPreferences,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(ConversationsUiState())
+    private val cachedConversations = inboxCache.peekConversations()
+
+    private val _state = MutableStateFlow(
+        ConversationsUiState(
+            conversations = cachedConversations.orEmpty(),
+            ready = cachedConversations != null,
+        ),
+    )
     val state: StateFlow<ConversationsUiState> = _state
     private val failures = FailureWindow()
     private var sseJob: Job? = null
@@ -86,6 +100,7 @@ class ConversationsViewModel @Inject constructor(
     private var profileCheckedAt: Long = 0L
     private var profileBusy = false
     private var profileRetriedEmpty = false
+    private var serverListArrived = false
 
     init {
         if (auth.hasSession()) {
@@ -99,7 +114,18 @@ class ConversationsViewModel @Inject constructor(
         }
         publishProfile()
         refreshProfile(force = false)
-        refresh(initial = true)
+        viewModelScope.launch {
+            val cached = runCatching { inboxCache.readConversations() }.getOrDefault(emptyList())
+            if (!serverListArrived) {
+                _state.update { state ->
+                    val conversations = if (state.conversations.isEmpty()) cached else state.conversations
+                    state.copy(conversations = conversations, ready = true, loading = false)
+                }
+            } else {
+                _state.update { it.copy(ready = true) }
+            }
+            refresh(initial = true)
+        }
         viewModelScope.launch { runCatching { themes.refresh() } }
         viewModelScope.launch {
             typing.names.collect { names -> _state.update { it.copy(typingNames = names) } }
@@ -316,9 +342,12 @@ class ConversationsViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { messages.archive(id) }
                 .onSuccess {
+                    prefs.clearLastSelectedConversationId(id)
                     _state.update { state ->
                         state.copy(
                             conversations = state.conversations.filter { it.conversationId != id },
+                            selectedId = if (state.selectedId == id) null else state.selectedId,
+                            closeThreadId = id,
                             notice = successNotice,
                         )
                     }
@@ -335,6 +364,7 @@ class ConversationsViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { messages.trash(id) }
                 .onSuccess {
+                    prefs.clearLastSelectedConversationId(id)
                     _state.update { state ->
                         state.copy(
                             conversations = state.conversations.filter { it.conversationId != id },
@@ -369,8 +399,10 @@ class ConversationsViewModel @Inject constructor(
                         _state.update { it.copy(refreshing = false) }
                         return@onSuccess
                     }
+                    serverListArrived = true
+                    inboxCache.saveConversations(list)
                     _state.update {
-                        it.copy(conversations = list, loading = false, refreshing = false, error = null)
+                        it.copy(conversations = list, loading = false, refreshing = false, error = null, ready = true)
                     }
                     publishProfile()
                     val q = _state.value.search.query.trim()
@@ -391,7 +423,7 @@ class ConversationsViewModel @Inject constructor(
                 .onFailure { e ->
                     val banner = failures.failure(NetErrors.friendly(e))
                     _state.update {
-                        it.copy(loading = false, refreshing = false, error = banner)
+                        it.copy(loading = false, refreshing = false, error = banner, ready = true)
                     }
                 }
         }

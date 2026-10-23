@@ -3,7 +3,9 @@ package com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.cache.InboxCache
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.MessageDto
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.AppPreferences
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.BaseUrlProvider
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.SseClient
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.TypingTracker
@@ -36,6 +38,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 import javax.inject.Inject
 
 /** Composer quote, matching the web app's `state.replyTo`. */
@@ -72,6 +75,8 @@ data class ThreadUiState(
     val selecting: Boolean = false,
     val selectedIds: Set<String> = emptySet(),
     val pending: List<ComposerPlan.PendingFile> = emptyList(),
+    /** False until the on-disk message cache has been checked, so an empty thread does not flash. */
+    val ready: Boolean = false,
 )
 
 sealed interface ThreadEffect {
@@ -88,6 +93,8 @@ class ThreadViewModel @Inject constructor(
     private val themes: ThemeRepository,
     val baseUrl: BaseUrlProvider,
     private val conversationNotifications: ConversationNotifications,
+    private val inboxCache: InboxCache,
+    private val prefs: AppPreferences,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -99,19 +106,22 @@ class ThreadViewModel @Inject constructor(
     private var messageLimit = 80
     private var jumpWindowLoaded = savedStateHandle.get<String>(ARG_JUMP_ID).isNullOrBlank()
 
+    private val openedMessages = if (initialId.isBlank()) emptyList() else inboxCache.peekMessages(initialId)
+
     private val _state = MutableStateFlow(
         ThreadUiState(
             conversationId = initialId,
             title = initialTitle,
             isGroup = initialGroup,
             displayProtocol = initialProtocol,
+            messages = openedMessages.orEmpty(),
             participantsJson = savedStateHandle.get<String>(ARG_PARTICIPANTS).orEmpty(),
             sourcePlatform = savedStateHandle.get<String>(ARG_SOURCE).orEmpty(),
             googlePinned = savedStateHandle.get<Boolean>(ARG_GOOGLE_PINNED) ?: false,
             localPinnedAtMs = savedStateHandle.get<Long>(ARG_LOCAL_PINNED) ?: 0L,
             notificationMode = savedStateHandle.get<String>(ARG_NOTIFICATION).orEmpty().ifBlank { "all" },
             jumpMessageId = savedStateHandle.get<String>(ARG_JUMP_ID)?.takeIf { it.isNotBlank() },
-            loading = !savedStateHandle.get<String>(ARG_JUMP_ID).isNullOrBlank(),
+            ready = openedMessages != null,
         ),
     )
     val state: StateFlow<ThreadUiState> = _state
@@ -126,6 +136,7 @@ class ThreadViewModel @Inject constructor(
     private var followJob: Job? = null
     private var refreshGen = 0L
     private var typingJob: Job? = null
+    private var serverMessagesFor: String? = null
 
     init {
         sse.ensureStarted()
@@ -152,13 +163,23 @@ class ThreadViewModel @Inject constructor(
     ) {
         val changed = _state.value.conversationId != conversationId
         if (changed) _state.value.pending.forEach { File(it.path).delete() }
-        if (conversationId.isNotBlank()) conversationNotifications.dismiss(conversationId)
+        if (changed) serverMessagesFor = null
+        if (conversationId.isNotBlank()) {
+            conversationNotifications.dismiss(conversationId)
+            inboxCache.touch(conversationId)
+        }
+        val cached = if (changed && conversationId.isNotBlank()) inboxCache.peekMessages(conversationId) else null
         _state.update {
             it.copy(
                 conversationId = conversationId,
                 title = title,
                 isGroup = isGroup,
-                messages = if (changed) emptyList() else it.messages,
+                messages = when {
+                    changed && cached != null -> cached
+                    changed -> emptyList()
+                    else -> it.messages
+                },
+                ready = if (changed) cached != null else it.ready,
                 draft = if (changed) "" else it.draft,
                 reply = if (changed) null else it.reply,
                 error = null,
@@ -225,11 +246,25 @@ class ThreadViewModel @Inject constructor(
         if (id.isBlank()) return
         val gen = ++refreshGen
         viewModelScope.launch {
-            _state.update { it.copy(loading = it.messages.isEmpty()) }
+            if (_state.value.conversationId == id && _state.value.messages.isEmpty() && serverMessagesFor != id) {
+                val cached = runCatching { inboxCache.readMessages(id) }.getOrDefault(emptyList())
+                if (gen == refreshGen && _state.value.conversationId == id && _state.value.messages.isEmpty() &&
+                    serverMessagesFor != id && cached.isNotEmpty()
+                ) {
+                    _state.update { it.copy(messages = cached, loading = false, ready = true) }
+                }
+            }
+            if (gen != refreshGen || _state.value.conversationId != id) return@launch
+            // Spinner only when this chat has nothing cached. Cached rows stay up
+            // through the background refresh.
+            _state.update { it.copy(loading = it.messages.isEmpty(), ready = true) }
+            if (_state.value.messages.isNotEmpty()) yield()
+            if (gen != refreshGen || _state.value.conversationId != id) return@launch
             if (!jumpWindowLoaded && jumpTs > 0L && id == initialId) {
                 messageLimit = runCatching { messagesRepo.jumpWindow(id, jumpTs) }.getOrDefault(200)
                 jumpWindowLoaded = true
             }
+            if (gen != refreshGen || _state.value.conversationId != id) return@launch
             runCatching { messagesRepo.messages(id, messageLimit) }
                 .onSuccess { list ->
                     failures.success()
@@ -249,6 +284,8 @@ class ThreadViewModel @Inject constructor(
                     }
                     // Drop stale responses: a slower older request must not overwrite a newer one.
                     if (gen != refreshGen || _state.value.conversationId != id) return@onSuccess
+                    serverMessagesFor = id
+                    inboxCache.saveMessages(id, list)
                     val pending = _state.value.messages.filter { local ->
                         local.messageId.startsWith("local-") && local.status != "OUTGOING_FAILED" &&
                             if (local.mediaId.isBlank()) {
@@ -274,7 +311,7 @@ class ThreadViewModel @Inject constructor(
                 }
                 .onFailure { e ->
                     val banner = failures.failure(NetErrors.friendly(e))
-                    _state.update { it.copy(loading = false, error = banner, loadedOnce = true) }
+                    _state.update { it.copy(loading = false, error = banner, loadedOnce = true, ready = true) }
                 }
         }
     }
@@ -777,6 +814,7 @@ class ThreadViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { messagesRepo.archive(id) }
                 .onSuccess {
+                    prefs.clearLastSelectedConversationId(id)
                     effect(ThreadEffect.ListChanged)
                     effect(ThreadEffect.Close)
                 }
@@ -790,6 +828,7 @@ class ThreadViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { messagesRepo.trash(id) }
                 .onSuccess {
+                    prefs.clearLastSelectedConversationId(id)
                     effect(ThreadEffect.ListChanged)
                     effect(ThreadEffect.Close)
                 }

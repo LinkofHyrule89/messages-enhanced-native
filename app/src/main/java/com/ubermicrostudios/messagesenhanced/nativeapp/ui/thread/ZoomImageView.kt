@@ -6,6 +6,7 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Matrix
 import android.graphics.RectF
+import android.graphics.drawable.Animatable
 import android.graphics.drawable.Drawable
 import android.util.AttributeSet
 import android.view.GestureDetector
@@ -63,8 +64,16 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     override fun setImageDrawable(drawable: Drawable?) {
+        val previous = getDrawable()
+        if (previous is Animatable && previous !== drawable) previous.stop()
         super.setImageDrawable(drawable)
+        (drawable as? Animatable)?.start()
         updateBase()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        (drawable as? Animatable)?.start()
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -98,6 +107,7 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     override fun onDetachedFromWindow() {
+        (drawable as? Animatable)?.stop()
         scaleAnim?.cancel()
         dragAnim?.cancel()
         super.onDetachedFromWindow()
@@ -114,9 +124,7 @@ class ZoomImageView @JvmOverloads constructor(
             publishZoom()
             return
         }
-        val dw = d.intrinsicWidth.toFloat()
-        val dh = d.intrinsicHeight.toFloat()
-        if (dw <= 0f || dh <= 0f) return
+        val (dw, dh) = drawableSize(d) ?: return
         val scale = ZoomMath.fitScale(width.toFloat(), height.toFloat(), dw, dh)
         baseMatrix.reset()
         baseMatrix.postScale(scale, scale)
@@ -125,6 +133,19 @@ class ZoomImageView @JvmOverloads constructor(
         dismissDy = 0f
         draggingDown = false
         applyMatrix()
+    }
+
+    /** Intrinsic size, then the drawable bounds, so an animated GIF can zoom like a bitmap. */
+    private fun drawableSize(d: Drawable): Pair<Float, Float>? {
+        var width = d.intrinsicWidth.toFloat()
+        var height = d.intrinsicHeight.toFloat()
+        if (width <= 0f || height <= 0f) {
+            val bounds = d.copyBounds()
+            width = bounds.width().toFloat()
+            height = bounds.height().toFloat()
+        }
+        if (width <= 0f || height <= 0f) return null
+        return width to height
     }
 
     private fun currentScale(): Float {
@@ -151,9 +172,8 @@ class ZoomImageView @JvmOverloads constructor(
 
     private fun constrain() {
         val d = drawable ?: return
-        val dw = d.intrinsicWidth.toFloat()
-        val dh = d.intrinsicHeight.toFloat()
-        if (dw <= 0f || dh <= 0f || width == 0 || height == 0) return
+        val (dw, dh) = drawableSize(d) ?: return
+        if (width == 0 || height == 0) return
         mapped.set(0f, 0f, dw, dh)
         drawMatrix.set(baseMatrix)
         drawMatrix.postConcat(suppMatrix)

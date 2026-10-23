@@ -108,6 +108,14 @@
     <string name="coming_soon">Coming soon</string>
     <string name="forward_search">Search conversations</string>
     <string name="forward_empty">No matching conversations</string>
+    <string name="share_title">Share</string>
+    <string name="share_recent">Recent conversations</string>
+    <string name="share_more_recent">More recent conversations</string>
+    <string name="share_add_message">Add a message</string>
+    <string name="share_send_group">Send to a group</string>
+    <string name="share_remove">Remove attachment</string>
+    <string name="share_no_matches">No matches</string>
+    <string name="share_sent_separately">Sent separately</string>
     <string name="select_cancel">Cancel selection</string>
     <string name="more_reactions">More reactions</string>
     <string name="starred">Starred</string>

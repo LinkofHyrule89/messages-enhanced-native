@@ -41,6 +41,7 @@ import coil.request.ImageRequest
 import coil.request.SuccessResult
 import coil.size.Size
 import com.ubermicrostudios.messagesenhanced.nativeapp.R
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ContactDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.JsonConfig
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.MessageDto
@@ -57,7 +58,9 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.util.ImageStore
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.MessageActions
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ReplyTexts
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.ShareIndex
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ViewerBundle
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.stableCacheKey
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ViewerGallery
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ViewerReplies
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
@@ -346,6 +349,8 @@ class ImageViewerActivity : SessionActivity() {
         binding.repliesEmpty.isVisible = open && replies.isEmpty()
         replyAdapter.title = meta?.title.orEmpty()
         replyAdapter.isGroup = meta?.isGroup == true
+        replyAdapter.origin = meta?.origin.orEmpty()
+        replyAdapter.participantsJson = meta?.participantsJson.orEmpty()
         replyAdapter.submit(replies)
         if (scrollEnd && replies.isNotEmpty()) binding.replies.scrollToPosition(replies.lastIndex)
     }
@@ -470,45 +475,134 @@ class ImageViewerActivity : SessionActivity() {
             toast("Nothing to forward")
             return
         }
+        val caption = pieces.filterIsInstance<MessageActions.ForwardPiece.Media>()
+            .firstNotNullOfOrNull { it.caption }
+            .orEmpty()
+        val thumb = url.ifBlank { filePath }
         lifecycleScope.launch {
             val conversations = runCatching { messagesRepo.conversations() }.getOrDefault(emptyList())
+            val contacts = runCatching { messagesRepo.contacts().all }.getOrDefault(emptyList())
             if (isFinishing) return@launch
-            ForwardPicker.show(this@ImageViewerActivity, "Forward to", conversations) { target ->
-                lifecycleScope.launch { sendForward(pieces, target) }
-            }
+            ForwardPicker.share(
+                context = this@ImageViewerActivity,
+                origin = baseUrl.origin(),
+                conversations = conversations,
+                contacts = contacts,
+                thumbnail = thumb,
+                caption = caption,
+                onSend = { selection -> lifecycleScope.launch { sendShare(pieces, selection, asGroup = false) } },
+                onSendGroup = { selection -> lifecycleScope.launch { sendShare(pieces, selection, asGroup = true) } },
+            )
         }
     }
 
-    private suspend fun sendForward(pieces: List<MessageActions.ForwardPiece>, target: ConversationDto) {
-        val name = formatPhoneForDisplay(Participants.convName(target))
-        var sent = 0
-        val result = runCatching {
-            for (piece in pieces) {
-                when (piece) {
-                    is MessageActions.ForwardPiece.Text -> {
-                        messagesRepo.send(target.conversationId, piece.body)
-                        sent++
-                    }
-                    is MessageActions.ForwardPiece.Media -> {
-                        val file = messagesRepo.downloadMedia(piece.messageId)
-                        messagesRepo.sendMedia(
-                            conversationId = target.conversationId,
+    private sealed interface Prepared {
+        data class Text(val body: String) : Prepared
+        data class Media(val bytes: ByteArray, val filename: String, val mime: String) : Prepared
+    }
+
+    private suspend fun prepare(pieces: List<MessageActions.ForwardPiece>): List<Prepared> {
+        val out = ArrayList<Prepared>()
+        for (piece in pieces) {
+            when (piece) {
+                is MessageActions.ForwardPiece.Text -> out.add(Prepared.Text(piece.body))
+                is MessageActions.ForwardPiece.Media -> {
+                    val file = messagesRepo.downloadMedia(piece.messageId)
+                    out.add(
+                        Prepared.Media(
                             bytes = file.bytes,
                             filename = piece.filename,
                             mime = file.mime.ifBlank { piece.mimeType },
-                        )
-                        sent++
-                        val caption = piece.caption
-                        if (!caption.isNullOrBlank()) messagesRepo.send(target.conversationId, caption)
+                        ),
+                    )
+                }
+            }
+        }
+        return out
+    }
+
+    private suspend fun deliver(prepared: List<Prepared>, conversationId: String, caption: String) {
+        var captionLeft = caption.trim()
+        for (piece in prepared) {
+            when (piece) {
+                is Prepared.Text -> messagesRepo.send(conversationId, piece.body)
+                is Prepared.Media -> {
+                    messagesRepo.sendMedia(
+                        conversationId = conversationId,
+                        bytes = piece.bytes,
+                        filename = piece.filename,
+                        mime = piece.mime,
+                    )
+                    if (captionLeft.isNotBlank()) {
+                        messagesRepo.send(conversationId, captionLeft)
+                        captionLeft = ""
                     }
                 }
             }
         }
-        if (result.isSuccess) {
-            toast(if (sent > 0) "Forwarded to $name" else "Nothing forwarded")
-        } else {
-            toast("Forward failed: ${result.exceptionOrNull()?.message ?: "request failed"}")
+        if (captionLeft.isNotBlank()) messagesRepo.send(conversationId, captionLeft)
+    }
+
+    private suspend fun sendShare(
+        pieces: List<MessageActions.ForwardPiece>,
+        selection: ForwardPicker.Selection,
+        asGroup: Boolean,
+    ) {
+        if (selection.conversations.isEmpty() && selection.contacts.isEmpty()) {
+            toast("Nothing forwarded")
+            return
         }
+        val caption = selection.caption.trim()
+        val prepared = runCatching { prepare(pieces) }.getOrElse { error ->
+            toast("Forward failed: ${error.message ?: "request failed"}")
+            return
+        }
+        var separate = false
+        if (asGroup) {
+            val numbers = ShareIndex.groupNumbers(selection.contacts, selection.conversations)
+            val started = if (numbers.size >= 2) {
+                runCatching { messagesRepo.startConversation(numbers) }.getOrNull()
+            } else {
+                null
+            }
+            val groupId = started?.conversationId.orEmpty()
+            if (groupId.isNotBlank() && runCatching { deliver(prepared, groupId, caption) }.isSuccess) {
+                toast("Forwarded")
+                return
+            }
+            separate = true
+        }
+        val targets = LinkedHashMap<String, String>()
+        for (conversation in selection.conversations) {
+            if (conversation.conversationId.isNotBlank()) {
+                targets.putIfAbsent(conversation.conversationId, Participants.convName(conversation))
+            }
+        }
+        for (contact in selection.contacts) {
+            val id = resolveContact(contact)
+            if (id.isNotBlank()) targets.putIfAbsent(id, contact.displayName)
+        }
+        if (targets.isEmpty()) {
+            toast(if (separate) getString(R.string.share_sent_separately) else "Nothing forwarded")
+            return
+        }
+        var sent = 0
+        var error: String? = null
+        for (id in targets.keys) {
+            val result = runCatching { deliver(prepared, id, caption) }
+            if (result.isSuccess) sent++ else error = result.exceptionOrNull()?.message
+        }
+        when {
+            sent == 0 -> toast("Forward failed: ${error ?: "request failed"}")
+            separate -> toast(getString(R.string.share_sent_separately))
+            else -> toast(if (sent == 1) "Forwarded" else "Forwarded to $sent")
+        }
+    }
+
+    private suspend fun resolveContact(contact: ContactDto): String {
+        if (contact.conversationId.isNotBlank()) return contact.conversationId
+        if (contact.phone.isBlank()) return ""
+        return runCatching { messagesRepo.startConversation(listOf(contact.phone)) }.getOrNull()?.conversationId.orEmpty()
     }
 
     /** Confirms, then calls [MessagesRepository.deleteMessage], which posts to [com.ubermicrostudios.messagesenhanced.nativeapp.data.net.MessagesApi.deleteMessage]. */
@@ -654,6 +748,7 @@ class ImageViewerActivity : SessionActivity() {
                 .data(url)
                 .size(Size.ORIGINAL)
                 .diskCachePolicy(CachePolicy.ENABLED)
+                .stableCacheKey(url)
                 .build(),
         )
         val key = (result as? SuccessResult)?.diskCacheKey ?: return null
@@ -796,6 +891,7 @@ class ImageViewerActivity : SessionActivity() {
             protocol: String,
             encryption: ConversationEncryption,
             origin: String,
+            participantsJson: String = "",
         ) {
             val root = origin.trim().trimEnd('/')
             val media = { message: MessageDto -> "$root/api/media/${message.messageId}" }
@@ -812,6 +908,8 @@ class ImageViewerActivity : SessionActivity() {
                 e2eeLoadedAt = encryption.loadedAt,
                 startId = tapped.messageId,
                 messages = messages.map { it.toViewerSnap() },
+                participantsJson = participantsJson,
+                origin = root,
             )
             val dir = File(context.cacheDir, "viewer").apply { mkdirs() }
             dir.listFiles()?.forEach { it.delete() }

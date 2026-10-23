@@ -37,6 +37,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemMessageTh
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.conversations.icon
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.conversations.tint
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.BubbleColors
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.stableCacheKey
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ConversationEncryption
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Encryption
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Formatters
@@ -248,7 +249,10 @@ class MessageAdapter(
                 attachment.isVisible = false
                 val src = item.localPreview
                 if (src.startsWith("http://") || src.startsWith("https://")) {
-                    image.load(src) { crossfade(true) }
+                    image.load(src) {
+                        crossfade(true)
+                        stableCacheKey(src)
+                    }
                 } else {
                     image.load(File(src)) { crossfade(true) }
                 }
@@ -256,7 +260,10 @@ class MessageAdapter(
             item.isImageMedia() && item.messageId.isNotBlank() && !item.messageId.startsWith("local-") -> {
                 image.isVisible = true
                 attachment.isVisible = false
-                image.load(mediaUrl(item)) { crossfade(true) }
+                image.load(mediaUrl(item)) {
+                    crossfade(true)
+                    stableCacheKey(mediaUrl(item))
+                }
             }
             item.hasAttachment() -> {
                 image.isVisible = false
@@ -371,7 +378,10 @@ class MessageAdapter(
             image.setImageDrawable(null)
         } else {
             image.isVisible = true
-            image.load(picture) { crossfade(true) }
+            image.load(picture) {
+                crossfade(true)
+                stableCacheKey(picture)
+            }
         }
         val siteLabel = preview.siteLabel()
         site.isVisible = siteLabel.isNotBlank()
@@ -551,6 +561,7 @@ class MessageAdapter(
             chip.addView(photo)
             photo.load(url) {
                 transformations(CircleCropTransformation())
+                stableCacheKey(url)
                 listener(onError = { _, _ -> photo.isVisible = false })
             }
         }

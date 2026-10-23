@@ -35,6 +35,8 @@ data class ViewerBundle(
     val e2eeLoadedAt: Long = 0L,
     val startId: String = "",
     val messages: List<ViewerSnap> = emptyList(),
+    val participantsJson: String = "",
+    val origin: String = "",
 ) {
     fun encryption(): ConversationEncryption = ConversationEncryption(
         e2ee = e2ee,

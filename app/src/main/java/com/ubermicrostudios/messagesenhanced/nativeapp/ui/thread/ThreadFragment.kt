@@ -218,6 +218,7 @@ class ThreadFragment : Fragment() {
                     protocol = state.protocol.ifBlank { state.displayProtocol },
                     encryption = state.encryption,
                     origin = viewModel.baseUrl.origin(),
+                    participantsJson = state.participantsJson,
                 )
             },
         )
@@ -338,7 +339,7 @@ class ThreadFragment : Fragment() {
             val url = LinkUrls.firstHttpUrl(message.body) ?: continue
             previews.request(url)
         }
-        binding.empty.isVisible = !state.loading && state.messages.isEmpty()
+        binding.empty.isVisible = state.ready && !state.loading && state.messages.isEmpty()
         binding.progress.isVisible = state.loading
         val serverError = !state.error.isNullOrBlank()
         binding.error.isVisible = serverError

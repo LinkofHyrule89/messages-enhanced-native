@@ -3,16 +3,33 @@ package com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread
 import android.graphics.drawable.GradientDrawable
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
+import coil.imageLoader
+import coil.request.Disposable
+import coil.request.ImageRequest
+import coil.transform.CircleCropTransformation
+import com.ubermicrostudios.messagesenhanced.nativeapp.R
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.MessageDto
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ParticipantDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemViewerReplyBinding
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Formatters
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ViewerReplies
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.stableCacheKey
 
 class ViewerReplyAdapter : RecyclerView.Adapter<ViewerReplyAdapter.Row>() {
     private var items: List<MessageDto> = emptyList()
+    private var people: List<ParticipantDto> = emptyList()
     var title: String = ""
     var isGroup: Boolean = false
+    var origin: String = ""
+
+    var participantsJson: String = ""
+        set(value) {
+            field = value
+            people = Participants.parse(value)
+        }
 
     fun submit(next: List<MessageDto>) {
         items = next
@@ -38,7 +55,48 @@ class ViewerReplyAdapter : RecyclerView.Adapter<ViewerReplyAdapter.Row>() {
             shape = GradientDrawable.OVAL
             setColor(Formatters.avatarColor(name))
         }
+        holder.request?.dispose()
+        holder.request = null
+        val photo = binding.replyAvatarPhoto
+        photo.setImageDrawable(null)
+        photo.isVisible = false
+        val person = ViewerReplies.senderParticipant(people, message)
+        val url = person?.let { Participants.personAvatarUrl(origin, it) }
+        if (url.isNullOrBlank()) {
+            photo.setTag(R.id.reply_avatar_photo, null)
+            return
+        }
+        val token = message.messageId + ":" + url
+        photo.setTag(R.id.reply_avatar_photo, token)
+        val request = ImageRequest.Builder(photo.context)
+            .data(url)
+            .target(photo)
+            .transformations(CircleCropTransformation())
+            .stableCacheKey(url)
+            .listener(
+                onSuccess = { _, _ ->
+                    if (photo.getTag(R.id.reply_avatar_photo) == token) photo.isVisible = true
+                },
+                onError = { _, _ ->
+                    if (photo.getTag(R.id.reply_avatar_photo) == token) {
+                        photo.isVisible = false
+                        photo.setImageDrawable(null)
+                    }
+                },
+            )
+            .build()
+        holder.request = photo.context.imageLoader.enqueue(request)
     }
 
-    class Row(val binding: ItemViewerReplyBinding) : RecyclerView.ViewHolder(binding.root)
+    override fun onViewRecycled(holder: Row) {
+        holder.request?.dispose()
+        holder.request = null
+        holder.binding.replyAvatarPhoto.setTag(R.id.reply_avatar_photo, null)
+        holder.binding.replyAvatarPhoto.setImageDrawable(null)
+        holder.binding.replyAvatarPhoto.isVisible = false
+    }
+
+    class Row(val binding: ItemViewerReplyBinding) : RecyclerView.ViewHolder(binding.root) {
+        var request: Disposable? = null
+    }
 }

@@ -5,6 +5,7 @@ import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.RenderEffect
 import android.graphics.Shader
+import android.graphics.drawable.Animatable
 import android.os.Build
 import android.view.LayoutInflater
 import android.view.View
@@ -19,6 +20,7 @@ import coil.size.Size
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.MessageDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemViewerPageBinding
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ImageStore
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.stableCacheKey
 import java.io.File
 
 /**
@@ -91,14 +93,18 @@ class ImagePageAdapter(
             if (legacy) size(96) else size(Size.ORIGINAL)
             diskCachePolicy(CachePolicy.ENABLED)
             crossfade(false)
+            stableCacheKey(data)
         }
         photo.load(data, imageLoader) {
             size(Size.ORIGINAL)
             diskCachePolicy(CachePolicy.ENABLED)
             crossfade(false)
+            stableCacheKey(data)
             listener(
-                onSuccess = { _, _ ->
+                onSuccess = { _, result ->
                     holder.binding.pageProgress.isVisible = false
+                    val animated = (photo.drawable as? Animatable) ?: (result.drawable as? Animatable)
+                    animated?.start()
                 },
                 onError = { _, _ ->
                     holder.binding.pageProgress.isVisible = false
@@ -123,6 +129,12 @@ class ImagePageAdapter(
             view.scaleX = 1.2f
             view.scaleY = 1.2f
         }
+    }
+
+    override fun onViewRecycled(holder: Page) {
+        (holder.binding.photo.drawable as? Animatable)?.stop()
+        holder.binding.photo.setImageDrawable(null)
+        holder.binding.backdrop.setImageDrawable(null)
     }
 
     class Page(val binding: ItemViewerPageBinding) : RecyclerView.ViewHolder(binding.root)

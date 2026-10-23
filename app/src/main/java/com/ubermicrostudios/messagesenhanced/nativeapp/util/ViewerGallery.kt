@@ -1,6 +1,7 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.util
 
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.MessageDto
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ParticipantDto
 
 /**
  * Photos the full-screen viewer can page through, and the direct replies hanging off one of them.
@@ -34,6 +35,24 @@ object ViewerReplies {
         count <= 0 -> null
         count > 99 -> "99+"
         else -> count.toString()
+    }
+
+    /**
+     * Who sent a viewer reply. Your own messages use the participant flagged `me`.
+     * Everyone else matches the last 10 digits of the sender number, then the name.
+     */
+    fun senderParticipant(people: List<ParticipantDto>, message: MessageDto): ParticipantDto? {
+        if (message.isFromMe) return people.firstOrNull { it.me }
+        val senderDigits = message.senderNumber.filter { it.isDigit() }.takeLast(10)
+        if (senderDigits.isNotEmpty()) {
+            people.firstOrNull { person ->
+                val theirs = person.number.ifBlank { person.phone }.filter { it.isDigit() }.takeLast(10)
+                theirs.isNotEmpty() && theirs == senderDigits
+            }?.let { return it }
+        }
+        val name = message.senderName.trim()
+        if (name.isEmpty()) return null
+        return people.firstOrNull { it.name.trim().equals(name, ignoreCase = true) }
     }
 
     /** "You" for your own messages. Everyone else is the formatted sender name. */

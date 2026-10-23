@@ -16,6 +16,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemConversat
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.AvatarRequest
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Formatters
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.stableCacheKey
 
 /** The views [AvatarBinder] fills. The list row and the thread header share one implementation. */
 class AvatarTarget(
@@ -136,6 +137,7 @@ object AvatarBinder {
             .data(url)
             .target(this)
             .transformations(CircleCropTransformation())
+            .stableCacheKey(url)
             .listener(
                 onError = { _, _ -> if (alive(target, token)) onError?.invoke() },
             )
@@ -151,6 +153,7 @@ object AvatarBinder {
     ) {
         val request = ImageRequest.Builder(target.box.context)
             .data(url)
+            .stableCacheKey(url)
             .listener(
                 onSuccess = { _, _ -> if (alive(target, token)) onResult(true) },
                 onError = { _, _ -> if (alive(target, token)) onResult(false) },

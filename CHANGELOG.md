@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.6.5
+
+- Replies in the photo viewer show the sender's photo, and fall back to colored initials when that photo can't be loaded.
+- GIFs play in the photo viewer. Pinch, drag, and double-tap still zoom the animation.
+- Forwarding a photo opens a Share screen like Google Messages: recent conversations, contacts from A to Z, a caption, and buttons to send to each selected chat or to one new group.
+- The conversation list and chats you opened recently show up right away from this phone, then refresh in the background.
+- Tablet: the conversation you had open comes back in the split view as soon as the app starts, from messages saved on this phone, then refreshes in the background.
+
 ## v0.6.4
 
 - Tap a photo in a conversation to open it full screen and swipe through every photo in the chat, starting from the one you tapped, with the next photo peeking in at the edge. Each photo sits on a rounded card over a blurred copy of itself. Pinch, drag, or double-tap to zoom; while zoomed, dragging moves the photo instead of changing pages. Swipe down or go back to close. The top shows who sent it and how long ago, plus download, delete, and a menu with Forward, Share, and Details. React along the bottom, or open replies to read comments and add one. Download saves to Pictures/Messages Enhanced.
