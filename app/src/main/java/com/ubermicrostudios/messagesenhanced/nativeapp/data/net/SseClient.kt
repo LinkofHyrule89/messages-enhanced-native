@@ -9,6 +9,7 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.JsonConfig
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.StreamEvent
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ReconnectDelay
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.runCatchingCancellable
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -227,7 +228,7 @@ class SseClient @Inject constructor(
     }
 
     private suspend fun refreshTyping() {
-        runCatching { api.typing() }.onSuccess { typing.replace(it.typing) }
+        runCatchingCancellable { api.typing() }.onSuccess { typing.replace(it.typing) }
         typing.prune()
     }
 

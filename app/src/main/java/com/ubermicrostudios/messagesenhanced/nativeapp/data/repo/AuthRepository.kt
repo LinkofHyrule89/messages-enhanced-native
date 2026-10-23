@@ -1,9 +1,12 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.data.repo
 
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.cache.InboxCache
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.BaseUrlProvider
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.PersistentCookieJar
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.SseClient
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.AppPreferences
+import com.ubermicrostudios.messagesenhanced.nativeapp.push.ConversationNotifications
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
@@ -26,13 +29,25 @@ class AuthRepository @Inject constructor(
     private val prefs: AppPreferences,
     private val baseUrl: BaseUrlProvider,
     private val sse: SseClient,
+    private val inboxCache: InboxCache,
+    private val notifications: ConversationNotifications,
 ) {
     fun hasSession(): Boolean = prefs.serverUrl.isNotBlank() && cookieJar.hasSessionCookie()
 
     fun serverUrl(): String = prefs.serverUrl
 
     fun saveServerUrl(url: String) {
-        prefs.serverUrl = url.trim().trimEnd('/')
+        val next = url.trim().trimEnd('/')
+        val previous = prefs.serverUrl
+        if (previous == next) return
+        prefs.serverUrl = next
+        if (previous.isNotBlank()) {
+            prefs.setLastSelectedConversationId(null)
+            inboxCache.clear()
+            notifications.clearAll()
+            // The settings screen stays signed in. The next refresh may save the new server.
+            inboxCache.openWrites()
+        }
     }
 
     suspend fun login(secret: String): LoginResult = withContext(Dispatchers.IO) {
@@ -43,7 +58,7 @@ class AuthRepository @Inject constructor(
             .post(body)
             .removeHeader("Origin")
             .build()
-        try {
+        val result = try {
             client.newCall(request).execute().use { resp ->
                 val location = resp.header("Location").orEmpty()
                 val hasSession = cookieJar.hasSessionCookie()
@@ -56,23 +71,35 @@ class AuthRepository @Inject constructor(
                     else -> LoginResult.Failed("Login failed (HTTP ${resp.code}).")
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
             LoginResult.Failed("Could not reach $origin.")
         }
+        if (result is LoginResult.Success) inboxCache.openWrites()
+        result
     }
 
     suspend fun logout() = withContext(Dispatchers.IO) {
-        sse.stop()
-        val origin = baseUrl.origin()
-        val request = Request.Builder()
-            .url("$origin/logout")
-            .get()
-            .removeHeader("Origin")
-            .build()
         try {
-            client.newCall(request).execute().close()
-        } catch (_: Exception) {
+            sse.stop()
+            val origin = baseUrl.origin()
+            val request = Request.Builder()
+                .url("$origin/logout")
+                .get()
+                .removeHeader("Origin")
+                .build()
+            try {
+                client.newCall(request).execute().close()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        } finally {
+            cookieJar.clear()
+            prefs.setLastSelectedConversationId(null)
+            inboxCache.clear()
+            notifications.clearAll()
         }
-        cookieJar.clear()
     }
 }

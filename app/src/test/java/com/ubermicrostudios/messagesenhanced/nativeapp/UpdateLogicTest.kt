@@ -3,6 +3,7 @@ package com.ubermicrostudios.messagesenhanced.nativeapp
 import android.content.Intent
 import android.os.Build
 import androidx.work.Data
+import com.ubermicrostudios.messagesenhanced.nativeapp.update.ApkIdentity
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.AppRelease
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.ReleaseParser
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.SemVer
@@ -36,6 +37,46 @@ class UpdateLogicTest {
         assertFalse(SemVer.isNewer("v0.6.0", "0.6.0"))
         assertFalse(SemVer.isNewer("v0.5.9", "0.6.0"))
         assertFalse(SemVer.isNewer("not-a-version", "0.6.0"))
+        assertNull(SemVer.parse("2147483648.0.0"))
+        assertNull(SemVer.parse("v1.9999999999.0"))
+        assertEquals(SemVer(2147483647, 0, 0), SemVer.parse("2147483647.0.0"))
+    }
+
+    @Test
+    fun rejectInstallRequiresTheSamePackageANewerCodeAndTheSameSigners() {
+        val installed = ApkIdentity("app", 11L, setOf("aa", "bb"))
+        assertNull(UpdatePolicy.rejectInstall(installed, ApkIdentity("app", 12L, setOf("bb", "aa"))))
+        assertEquals(
+            "This update is for a different app.",
+            UpdatePolicy.rejectInstall(installed, ApkIdentity("other", 12L, setOf("aa", "bb"))),
+        )
+        assertEquals(
+            "This update is for a different app.",
+            UpdatePolicy.rejectInstall(installed, ApkIdentity(" ", 12L, setOf("aa", "bb"))),
+        )
+        assertEquals(
+            "This update is not newer than the installed version.",
+            UpdatePolicy.rejectInstall(installed, ApkIdentity("app", 11L, setOf("aa", "bb"))),
+        )
+        assertEquals(
+            "This update is not newer than the installed version.",
+            UpdatePolicy.rejectInstall(installed, ApkIdentity("app", 10L, setOf("aa", "bb"))),
+        )
+        assertEquals(
+            "This update is signed with a different key.",
+            UpdatePolicy.rejectInstall(installed, ApkIdentity("app", 12L, setOf("aa"))),
+        )
+        assertEquals(
+            "This update is signed with a different key.",
+            UpdatePolicy.rejectInstall(installed, ApkIdentity("app", 12L, emptySet())),
+        )
+        assertEquals(
+            "This update is signed with a different key.",
+            UpdatePolicy.rejectInstall(
+                installed.copy(signers = emptySet()),
+                ApkIdentity("app", 12L, setOf("aa", "bb")),
+            ),
+        )
     }
 
     @Test

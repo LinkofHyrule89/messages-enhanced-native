@@ -67,7 +67,32 @@ object UpdatePolicy {
         if (currentToken == 0) return true
         return callbackToken == currentToken
     }
+
+    /**
+     * Null when [archive] may be installed over [installed].
+     * The archive package and current signing certs must match, and its versionCode
+     * must be strictly newer. A missing signer fails closed.
+     */
+    fun rejectInstall(installed: ApkIdentity, archive: ApkIdentity): String? {
+        if (archive.packageName.isBlank() || archive.packageName != installed.packageName) {
+            return "This update is for a different app."
+        }
+        if (archive.versionCode <= installed.versionCode) {
+            return "This update is not newer than the installed version."
+        }
+        if (installed.signers.isEmpty() || archive.signers.isEmpty() || installed.signers != archive.signers) {
+            return "This update is signed with a different key."
+        }
+        return null
+    }
 }
+
+/** Package name, versionCode, and current signer hashes for an APK. */
+data class ApkIdentity(
+    val packageName: String,
+    val versionCode: Long,
+    val signers: Set<String>,
+)
 
 sealed class UpdateProgress {
     data class Downloading(val read: Long, val total: Long) : UpdateProgress() {

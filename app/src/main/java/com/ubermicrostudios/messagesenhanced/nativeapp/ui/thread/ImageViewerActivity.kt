@@ -1,6 +1,7 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread
 
 import android.Manifest
+import android.app.Activity
 import android.content.ClipData
 import android.content.ContentValues
 import android.content.Context
@@ -10,6 +11,8 @@ import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.view.Gravity
 import android.view.View
@@ -55,6 +58,8 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.util.EmojiCatalog
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Encryption
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Formatters
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ImageStore
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.SafeFiles
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.runCatchingCancellable
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.MessageActions
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ReplyTexts
@@ -77,6 +82,7 @@ import kotlinx.serialization.encodeToString
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.util.concurrent.Executors
 import javax.inject.Inject
 import kotlin.coroutines.coroutineContext
 import kotlin.math.max
@@ -124,7 +130,7 @@ class ImageViewerActivity : SessionActivity() {
 
         launchPath = intent.getStringExtra(EXTRA_PATH)
         if (model.bundle == null) {
-            val loaded = launchPath?.let { readBundle(it) }
+            val loaded = launchPath?.let { readBundle(cacheDir, it) }
             if (loaded == null) {
                 finish()
                 return
@@ -318,7 +324,7 @@ class ImageViewerActivity : SessionActivity() {
         if (emoji.isBlank()) return
         val conversation = message.conversationId.ifBlank { model.bundle?.conversationId.orEmpty() }
         lifecycleScope.launch {
-            runCatching { messagesRepo.react(conversation, message.messageId, emoji) }
+            runCatchingCancellable { messagesRepo.react(conversation, message.messageId, emoji) }
                 .onFailure { error ->
                     val text = error.message.orEmpty()
                     if (!text.contains("login required", ignoreCase = true)) {
@@ -379,7 +385,7 @@ class ImageViewerActivity : SessionActivity() {
         persist()
         val imageId = message.messageId
         lifecycleScope.launch {
-            val result = runCatching {
+            val result = runCatchingCancellable {
                 messagesRepo.send(conversation, text, replyToId = message.messageId)
             }
             sendingComment = false
@@ -394,7 +400,7 @@ class ImageViewerActivity : SessionActivity() {
                 }
                 return@launch
             }
-            val remote = runCatching { messagesRepo.messages(conversation, 1000) }.getOrNull()
+            val remote = runCatchingCancellable { messagesRepo.messages(conversation, 1000) }.getOrNull()
             if (remote != null) {
                 messages = ViewerReplies.mergeRemote(messages, remote, optimistic)
                 model.messages = messages
@@ -409,7 +415,7 @@ class ImageViewerActivity : SessionActivity() {
         val conversation = model.bundle?.conversationId.orEmpty()
         if (conversation.isBlank()) return
         lifecycleScope.launch {
-            val remote = runCatching { messagesRepo.messages(conversation, 1000) }.getOrNull() ?: return@launch
+            val remote = runCatchingCancellable { messagesRepo.messages(conversation, 1000) }.getOrNull() ?: return@launch
             val keep = model.pageId ?: return@launch
             messages = ViewerReplies.mergeRemote(messages, remote)
             model.messages = messages
@@ -480,8 +486,8 @@ class ImageViewerActivity : SessionActivity() {
             .orEmpty()
         val thumb = url.ifBlank { filePath }
         lifecycleScope.launch {
-            val conversations = runCatching { messagesRepo.conversations() }.getOrDefault(emptyList())
-            val contacts = runCatching { messagesRepo.contacts().all }.getOrDefault(emptyList())
+            val conversations = runCatchingCancellable { messagesRepo.conversations() }.getOrDefault(emptyList())
+            val contacts = runCatchingCancellable { messagesRepo.contacts().all }.getOrDefault(emptyList())
             if (isFinishing) return@launch
             ForwardPicker.share(
                 context = this@ImageViewerActivity,
@@ -553,7 +559,7 @@ class ImageViewerActivity : SessionActivity() {
             return
         }
         val caption = selection.caption.trim()
-        val prepared = runCatching { prepare(pieces) }.getOrElse { error ->
+        val prepared = runCatchingCancellable { prepare(pieces) }.getOrElse { error ->
             toast("Forward failed: ${error.message ?: "request failed"}")
             return
         }
@@ -561,12 +567,12 @@ class ImageViewerActivity : SessionActivity() {
         if (asGroup) {
             val numbers = ShareIndex.groupNumbers(selection.contacts, selection.conversations)
             val started = if (numbers.size >= 2) {
-                runCatching { messagesRepo.startConversation(numbers) }.getOrNull()
+                runCatchingCancellable { messagesRepo.startConversation(numbers) }.getOrNull()
             } else {
                 null
             }
             val groupId = started?.conversationId.orEmpty()
-            if (groupId.isNotBlank() && runCatching { deliver(prepared, groupId, caption) }.isSuccess) {
+            if (groupId.isNotBlank() && runCatchingCancellable { deliver(prepared, groupId, caption) }.isSuccess) {
                 toast("Forwarded")
                 return
             }
@@ -589,7 +595,7 @@ class ImageViewerActivity : SessionActivity() {
         var sent = 0
         var error: String? = null
         for (id in targets.keys) {
-            val result = runCatching { deliver(prepared, id, caption) }
+            val result = runCatchingCancellable { deliver(prepared, id, caption) }
             if (result.isSuccess) sent++ else error = result.exceptionOrNull()?.message
         }
         when {
@@ -602,7 +608,7 @@ class ImageViewerActivity : SessionActivity() {
     private suspend fun resolveContact(contact: ContactDto): String {
         if (contact.conversationId.isNotBlank()) return contact.conversationId
         if (contact.phone.isBlank()) return ""
-        return runCatching { messagesRepo.startConversation(listOf(contact.phone)) }.getOrNull()?.conversationId.orEmpty()
+        return runCatchingCancellable { messagesRepo.startConversation(listOf(contact.phone)) }.getOrNull()?.conversationId.orEmpty()
     }
 
     /** Confirms, then calls [MessagesRepository.deleteMessage], which posts to [com.ubermicrostudios.messagesenhanced.nativeapp.data.net.MessagesApi.deleteMessage]. */
@@ -631,7 +637,7 @@ class ImageViewerActivity : SessionActivity() {
             else -> null
         }
         lifecycleScope.launch {
-            runCatching { messagesRepo.deleteMessage(message.messageId) }
+            runCatchingCancellable { messagesRepo.deleteMessage(message.messageId) }
                 .onSuccess { response ->
                     messages = messages.filter { it.messageId != message.messageId }
                     model.messages = messages
@@ -661,8 +667,12 @@ class ImageViewerActivity : SessionActivity() {
             startId = model.pageId ?: meta.startId,
         )
         model.bundle = bundle
+        val root = cacheDir
         lifecycleScope.launch(Dispatchers.IO) {
-            runCatching { File(path).writeText(JsonConfig.json.encodeToString(bundle)) }
+            val file = SafeFiles.fileWithin(root, path) ?: return@launch
+            synchronized(writeLock) {
+                runCatchingCancellable { file.writeText(JsonConfig.json.encodeToString(bundle)) }
+            }
         }
     }
 
@@ -712,7 +722,7 @@ class ImageViewerActivity : SessionActivity() {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         val chooser = Intent.createChooser(share, getString(R.string.share))
-        runCatching { startActivity(chooser) }.onFailure { toast(R.string.image_share_failed) }
+        runCatchingCancellable { startActivity(chooser) }.onFailure { toast(R.string.image_share_failed) }
     }
 
     private suspend fun materialize(): Cached = withContext(Dispatchers.IO) {
@@ -721,7 +731,7 @@ class ImageViewerActivity : SessionActivity() {
         dir.listFiles()?.forEach { if (it.lastModified() < cutoff) it.delete() }
         val hinted = mime.ifBlank { "image/jpeg" }
         if (filePath.isNotBlank()) {
-            val from = File(filePath)
+            val from = SafeFiles.fileWithin(cacheDir, filePath) ?: error("missing")
             if (!from.isFile) error("missing")
             if (from.length() > MessageActions.MAX_MEDIA_BYTES) error("too large")
             val dest = File(dir, ImageStore.fileName(messageId, hinted, System.currentTimeMillis()))
@@ -836,7 +846,7 @@ class ImageViewerActivity : SessionActivity() {
                 resolver.update(uri, values, null, null)
                 true
             } catch (_: Exception) {
-                runCatching { resolver.delete(uri, null, null) }
+                runCatchingCancellable { resolver.delete(uri, null, null) }
                 false
             }
         }
@@ -879,6 +889,10 @@ class ImageViewerActivity : SessionActivity() {
         private const val EXTRA_PATH = "viewer_path"
         private const val STATE_PAGE = "page"
         private const val STATE_COMMENTS = "comments"
+        private val writeLock = Any()
+        private val sessionWriter = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "viewer-session").apply { isDaemon = true }
+        }
 
         fun open(
             context: Context,
@@ -911,18 +925,34 @@ class ImageViewerActivity : SessionActivity() {
                 participantsJson = participantsJson,
                 origin = root,
             )
-            val dir = File(context.cacheDir, "viewer").apply { mkdirs() }
-            dir.listFiles()?.forEach { it.delete() }
-            val file = File(dir, "session.json")
-            val wrote = runCatching { file.writeText(JsonConfig.json.encodeToString(bundle)) }.isSuccess
-            if (!wrote || !file.isFile) return
-            context.startActivity(Intent(context, ImageViewerActivity::class.java).putExtra(EXTRA_PATH, file.absolutePath))
+            val cacheRoot = context.cacheDir
+            sessionWriter.execute {
+                val path = synchronized(writeLock) {
+                    val dir = File(cacheRoot, "viewer").apply { mkdirs() }
+                    dir.listFiles()?.forEach { it.delete() }
+                    val file = File(dir, "session.json")
+                    val wrote = runCatchingCancellable { file.writeText(JsonConfig.json.encodeToString(bundle)) }.isSuccess
+                    if (!wrote || !file.isFile) null else file.absolutePath
+                }
+                if (path != null) {
+                    Handler(Looper.getMainLooper()).post {
+                        if (context is Activity && (context.isFinishing || context.isDestroyed)) return@post
+                        runCatchingCancellable {
+                            context.startActivity(
+                                Intent(context, ImageViewerActivity::class.java).putExtra(EXTRA_PATH, path),
+                            )
+                        }
+                    }
+                }
+            }
         }
 
-        private fun readBundle(path: String): ViewerBundle? {
-            val file = File(path)
+        private fun readBundle(cacheDir: File, path: String): ViewerBundle? {
+            val file = SafeFiles.fileWithin(cacheDir, path) ?: return null
             if (!file.isFile) return null
-            return runCatching { JsonConfig.json.decodeFromString(ViewerBundle.serializer(), file.readText()) }.getOrNull()
+            return runCatchingCancellable {
+                JsonConfig.json.decodeFromString(ViewerBundle.serializer(), file.readText())
+            }.getOrNull()
         }
     }
 }

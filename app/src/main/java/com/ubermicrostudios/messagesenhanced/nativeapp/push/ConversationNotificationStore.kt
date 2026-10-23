@@ -1,5 +1,6 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.push
 
+import android.annotation.SuppressLint
 import android.content.Context
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.JsonConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -28,6 +29,18 @@ class ConversationNotificationStore @Inject constructor(
         memory = next
         prefs.edit().putString(KEY, JsonConfig.json.encodeToString(next)).apply()
         next
+    }
+
+    /**
+     * Returns the history that was stored, then commits an empty list.
+     * commit, not apply, so sign-out finishes the wipe before the process moves on.
+     */
+    @SuppressLint("ApplySharedPref")
+    fun clear(): List<NotifThread> = synchronized(lock) {
+        val previous = load()
+        memory = emptyList()
+        prefs.edit().remove(KEY).commit()
+        previous
     }
 
     private fun load(): List<NotifThread> {

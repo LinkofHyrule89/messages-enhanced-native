@@ -8,6 +8,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDt
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.AuthRepository
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.MessagesRepository
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.NetErrors
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.runCatchingCancellable
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.NewChat
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -132,7 +133,7 @@ class NewChatViewModel @Inject constructor(
     private fun load() {
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = "").withRows() }
-            runCatching { messages.contacts() }
+            runCatchingCancellable { messages.contacts() }
                 .onSuccess { data -> _state.update { it.copy(data = data, loading = false, error = "").withRows() } }
                 .onFailure { error ->
                     _state.update {
@@ -147,7 +148,7 @@ class NewChatViewModel @Inject constructor(
         _state.update { it.copy(busy = true).withRows() }
         viewModelScope.launch {
             _effects.emit(NewChatEffect.Toast("Opening conversation…"))
-            runCatching { messages.startConversation(numbers) }
+            runCatchingCancellable { messages.startConversation(numbers) }
                 .onSuccess { result ->
                     _state.update { it.copy(busy = false).withRows() }
                     finish(result.conversationId, result.name.ifBlank { name }, result.isGroup)

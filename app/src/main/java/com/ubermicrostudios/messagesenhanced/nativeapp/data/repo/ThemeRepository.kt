@@ -8,9 +8,11 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.WallpaperCateg
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.BaseUrlProvider
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.MessagesApi
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.AppSettingsSync
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.runCatchingCancellable
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ThemeColors
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ThemePalettes
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ThemeScreen
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -76,7 +78,7 @@ class ThemeRepository @Inject constructor(
             loaded = true
         }
         _paletteIds.value = response.palettes
-        val settingsResult = runCatching { api.appSettings() }
+        val settingsResult = runCatchingCancellable { api.appSettings() }
         if (settingsResult.isFailure) {
             publishLegacy()
         } else {
@@ -85,7 +87,7 @@ class ThemeRepository @Inject constructor(
         _revision.value = _revision.value + 1
         val needsWallpaper = response.themes.values.any { it.wallpaper.isNotBlank() && it.custom.isBlank() }
         if (needsWallpaper && synchronized(this) { wallpaperUrls.isEmpty() }) {
-            runCatching { ensureWallpapers() }
+            runCatchingCancellable { ensureWallpapers() }
         }
     }
 
@@ -124,7 +126,7 @@ class ThemeRepository @Inject constructor(
                 val raw = response.errorBody()?.string().orEmpty()
                 response.body()?.close()
                 if (code == 401) error("login required")
-                val parsed = runCatching {
+                val parsed = runCatchingCancellable {
                     JsonConfig.json.parseToJsonElement(raw).jsonObject["error"]?.jsonPrimitive?.contentOrNull
                 }.getOrNull()
                 error(parsed?.takeIf { it.isNotBlank() } ?: "Couldn't save the theme (HTTP $code).")
@@ -150,7 +152,7 @@ class ThemeRepository @Inject constructor(
             }
             synchronized(this) { themes[conversationId] = saved.theme }
             if (saved.theme.wallpaper.isNotBlank() && synchronized(this) { wallpaperUrls[saved.theme.wallpaper] } == null) {
-                runCatching { ensureWallpapers() }
+                runCatchingCancellable { ensureWallpapers() }
             }
         }
         _revision.value = _revision.value + 1
@@ -224,7 +226,7 @@ class ThemeRepository @Inject constructor(
     }
 
     suspend fun ensureLoaded() {
-        if (!loaded) runCatching { refresh() }
+        if (!loaded) runCatchingCancellable { refresh() }
     }
 
     fun appearance(conversationId: String): ChatAppearance {
@@ -267,14 +269,14 @@ class ThemeRepository @Inject constructor(
         )
         var committed = plan.upload.isEmpty()
         if (plan.upload.isNotEmpty()) {
-            committed = runCatching { api.putSettings(merge(settings, plan.upload)) }.isSuccess
+            committed = runCatchingCancellable { api.putSettings(merge(settings, plan.upload)) }.isSuccess
         }
         if (committed && plan.deleteLegacy) dropLegacy()
         publish(plan.theme, plan.appearance)
     }
 
     private suspend fun dropLegacy() {
-        val response = runCatching { api.deleteTheme(AppSettingsSync.LEGACY_CONVERSATION) }.getOrNull() ?: return
+        val response = runCatchingCancellable { api.deleteTheme(AppSettingsSync.LEGACY_CONVERSATION) }.getOrNull() ?: return
         response.body()?.close()
         response.errorBody()?.close()
         if (response.isSuccessful || response.code() == 404) {
@@ -312,10 +314,11 @@ class ThemeRepository @Inject constructor(
     }
 
     private fun parseThemeError(error: Throwable): Nothing {
+        if (error is CancellationException) throw error
         if (error is HttpException) {
             if (error.code() == 401) kotlin.error("login required")
-            val raw = runCatching { error.response()?.errorBody()?.string() }.getOrNull().orEmpty()
-            val parsed = runCatching {
+            val raw = runCatchingCancellable { error.response()?.errorBody()?.string() }.getOrNull().orEmpty()
+            val parsed = runCatchingCancellable {
                 JsonConfig.json.parseToJsonElement(raw).jsonObject["error"]?.jsonPrimitive?.contentOrNull
             }.getOrNull()
             if (!parsed.isNullOrBlank()) kotlin.error(parsed)

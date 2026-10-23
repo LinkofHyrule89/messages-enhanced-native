@@ -16,6 +16,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.GifPage
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ComposerPlan
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ConversationEncryption
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.FailureWindow
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.runCatchingCancellable
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.NetErrors
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.MessageActions
@@ -214,7 +215,7 @@ class ThreadViewModel @Inject constructor(
         loadMeta(conversationId)
         watchTyping(conversationId, isGroup)
         startSse()
-        viewModelScope.launch { runCatching { themes.ensureLoaded() } }
+        viewModelScope.launch { runCatchingCancellable { themes.ensureLoaded() } }
     }
 
     fun onResume() {
@@ -247,7 +248,7 @@ class ThreadViewModel @Inject constructor(
         val gen = ++refreshGen
         viewModelScope.launch {
             if (_state.value.conversationId == id && _state.value.messages.isEmpty() && serverMessagesFor != id) {
-                val cached = runCatching { inboxCache.readMessages(id) }.getOrDefault(emptyList())
+                val cached = runCatchingCancellable { inboxCache.readMessages(id) }.getOrDefault(emptyList())
                 if (gen == refreshGen && _state.value.conversationId == id && _state.value.messages.isEmpty() &&
                     serverMessagesFor != id && cached.isNotEmpty()
                 ) {
@@ -261,11 +262,11 @@ class ThreadViewModel @Inject constructor(
             if (_state.value.messages.isNotEmpty()) yield()
             if (gen != refreshGen || _state.value.conversationId != id) return@launch
             if (!jumpWindowLoaded && jumpTs > 0L && id == initialId) {
-                messageLimit = runCatching { messagesRepo.jumpWindow(id, jumpTs) }.getOrDefault(200)
+                messageLimit = runCatchingCancellable { messagesRepo.jumpWindow(id, jumpTs) }.getOrDefault(200)
                 jumpWindowLoaded = true
             }
             if (gen != refreshGen || _state.value.conversationId != id) return@launch
-            runCatching { messagesRepo.messages(id, messageLimit) }
+            runCatchingCancellable { messagesRepo.messages(id, messageLimit) }
                 .onSuccess { list ->
                     failures.success()
                     // Mark read even when this response is stale (a poll/event refresh can
@@ -347,7 +348,7 @@ class ThreadViewModel @Inject constructor(
         if (emoji.isBlank()) return
         val conversationId = message.conversationId.ifBlank { _state.value.conversationId }
         viewModelScope.launch {
-            runCatching { messagesRepo.react(conversationId, message.messageId, emoji) }
+            runCatchingCancellable { messagesRepo.react(conversationId, message.messageId, emoji) }
                 .onSuccess {
                     if (_state.value.conversationId == conversationId) refresh(markRead = false)
                 }
@@ -365,7 +366,7 @@ class ThreadViewModel @Inject constructor(
         val on = message.messageId !in _state.value.starredIds
         _state.update { it.copy(starredIds = MessageActions.applyStar(it.starredIds, message.messageId, on)) }
         viewModelScope.launch {
-            runCatching { messagesRepo.setStar(message.messageId, conversationId, on) }
+            runCatchingCancellable { messagesRepo.setStar(message.messageId, conversationId, on) }
                 .onSuccess {
                     effect(ThreadEffect.Toast(if (on) "Starred (on this server)" else "Unstarred"))
                 }
@@ -400,7 +401,7 @@ class ThreadViewModel @Inject constructor(
         if (list.isEmpty()) return
         viewModelScope.launch {
             var scope: String? = null
-            runCatching {
+            runCatchingCancellable {
                 for (message in list) {
                     scope = messagesRepo.deleteMessage(message.messageId).scope
                     _state.update { state ->
@@ -427,7 +428,7 @@ class ThreadViewModel @Inject constructor(
 
     fun forwardTargets(done: (List<ConversationDto>) -> Unit) {
         viewModelScope.launch {
-            done(runCatching { messagesRepo.conversations() }.getOrDefault(emptyList()))
+            done(runCatchingCancellable { messagesRepo.conversations() }.getOrDefault(emptyList()))
         }
     }
 
@@ -441,7 +442,7 @@ class ThreadViewModel @Inject constructor(
         }
         viewModelScope.launch {
             var sent = 0
-            runCatching {
+            runCatchingCancellable {
                 for (piece in pieces) {
                     when (piece) {
                         is MessageActions.ForwardPiece.Text -> {
@@ -475,7 +476,7 @@ class ThreadViewModel @Inject constructor(
     private fun loadStars(id: String) {
         if (id.isBlank()) return
         viewModelScope.launch {
-            runCatching { messagesRepo.stars(id) }
+            runCatchingCancellable { messagesRepo.stars(id) }
                 .onSuccess { response ->
                     if (_state.value.conversationId != id) return@onSuccess
                     _state.update { it.copy(starredIds = response.stars.keys) }
@@ -552,7 +553,7 @@ class ThreadViewModel @Inject constructor(
             for (action in plan.media) {
                 val file = files[action.index]
                 val bubble = "local-${file.id}"
-                val result = runCatching {
+                val result = runCatchingCancellable {
                     val bytes = withContext(Dispatchers.IO) { File(file.path).readBytes() }
                     messagesRepo.sendMedia(
                         conversationId = conv,
@@ -572,7 +573,7 @@ class ThreadViewModel @Inject constructor(
             }
             if (failed == null && plan.text != null) {
                 val text = plan.text
-                val result = runCatching {
+                val result = runCatchingCancellable {
                     messagesRepo.send(conv, text.text, replyToId = text.replyToId.takeIf { it.isNotBlank() }, idempotencyKey = textKey)
                 }
                 if (result.isSuccess) dropLocal("local-$textKey") else failed = result.exceptionOrNull()
@@ -648,7 +649,7 @@ class ThreadViewModel @Inject constructor(
             )
         }
         viewModelScope.launch {
-            val gifResult = runCatching {
+            val gifResult = runCatchingCancellable {
                 messagesRepo.sendGif(conv, gif.url, caption = plan.caption, replyToId = plan.gifReply)
             }
             if (gifResult.isFailure) {
@@ -669,7 +670,7 @@ class ThreadViewModel @Inject constructor(
             }
             dropLocal(gifId)
             if (plan.followUpText.isNotEmpty()) {
-                val textResult = runCatching {
+                val textResult = runCatchingCancellable {
                     messagesRepo.send(
                         conv,
                         plan.followUpText,
@@ -735,7 +736,7 @@ class ThreadViewModel @Inject constructor(
         val id = _state.value.conversationId
         if (id.isBlank()) return
         viewModelScope.launch {
-            runCatching { messagesRepo.setNotificationMode(id, mode) }
+            runCatchingCancellable { messagesRepo.setNotificationMode(id, mode) }
                 .onSuccess { conv ->
                     _state.update { it.copy(notificationMode = conv.notificationMode.ifBlank { mode }) }
                 }
@@ -748,7 +749,7 @@ class ThreadViewModel @Inject constructor(
 
     private fun loadMeta(id: String) {
         viewModelScope.launch {
-            runCatching { messagesRepo.conversationMeta(id) }
+            runCatchingCancellable { messagesRepo.conversationMeta(id) }
                 .onSuccess { meta ->
                     if (_state.value.conversationId != id) return@onSuccess
                     _state.update {
@@ -777,7 +778,7 @@ class ThreadViewModel @Inject constructor(
         if (id.isBlank()) return
         val muted = current.notificationMode != "muted"
         viewModelScope.launch {
-            runCatching { messagesRepo.setMuted(id, muted) }
+            runCatchingCancellable { messagesRepo.setMuted(id, muted) }
                 .onSuccess {
                     if (_state.value.conversationId != id) return@onSuccess
                     _state.update { it.copy(notificationMode = if (muted) "muted" else "all") }
@@ -793,7 +794,7 @@ class ThreadViewModel @Inject constructor(
         if (id.isBlank() || current.googlePinned) return
         val pinned = current.localPinnedAtMs <= 0L
         viewModelScope.launch {
-            runCatching { messagesRepo.pin(id, pinned) }
+            runCatchingCancellable { messagesRepo.pin(id, pinned) }
                 .onSuccess { response ->
                     if (_state.value.conversationId != id) return@onSuccess
                     _state.update {
@@ -812,7 +813,7 @@ class ThreadViewModel @Inject constructor(
         val id = _state.value.conversationId
         if (id.isBlank()) return
         viewModelScope.launch {
-            runCatching { messagesRepo.archive(id) }
+            runCatchingCancellable { messagesRepo.archive(id) }
                 .onSuccess {
                     prefs.clearLastSelectedConversationId(id)
                     effect(ThreadEffect.ListChanged)
@@ -826,7 +827,7 @@ class ThreadViewModel @Inject constructor(
         val id = _state.value.conversationId
         if (id.isBlank()) return
         viewModelScope.launch {
-            runCatching { messagesRepo.trash(id) }
+            runCatchingCancellable { messagesRepo.trash(id) }
                 .onSuccess {
                     prefs.clearLastSelectedConversationId(id)
                     effect(ThreadEffect.ListChanged)
@@ -841,7 +842,7 @@ class ThreadViewModel @Inject constructor(
         val id = _state.value.conversationId
         if (id.isBlank()) return
         viewModelScope.launch {
-            runCatching { messagesRepo.refreshConversation(id) }
+            runCatchingCancellable { messagesRepo.refreshConversation(id) }
                 .onSuccess { message ->
                     effect(ThreadEffect.Toast(message))
                     refresh(markRead = false)

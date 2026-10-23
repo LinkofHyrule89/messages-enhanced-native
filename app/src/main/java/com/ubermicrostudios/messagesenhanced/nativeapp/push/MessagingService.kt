@@ -81,7 +81,7 @@ class MessagingService : FirebaseMessagingService() {
         }
         val pending = PendingIntent.getActivity(
             this,
-            tag.hashCode(),
+            MessageNotificationIds.requestCode(tag, MessageNotificationIds.SLOT_CONTENT),
             open,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )

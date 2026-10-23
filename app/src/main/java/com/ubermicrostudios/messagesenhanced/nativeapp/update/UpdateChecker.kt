@@ -2,7 +2,9 @@ package com.ubermicrostudios.messagesenhanced.nativeapp.update
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -23,6 +25,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
@@ -54,6 +57,10 @@ class UpdateChecker @Inject constructor(
 ) {
     private val claimLock = Any()
     private val network = Mutex()
+    /** Held across prepare, download, and install so one transfer cannot delete the other's APK. */
+    private val transfer = Mutex()
+    @Volatile
+    private var transferActive: Boolean = false
     private val installScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val progressListeners = CopyOnWriteArrayList<(UpdateProgress) -> Unit>()
     private val sessionLock = Any()
@@ -87,7 +94,24 @@ class UpdateChecker @Inject constructor(
 
     fun canInstallPackages(): Boolean = context.packageManager.canRequestPackageInstalls()
 
-    fun installInProgress(): Boolean = installJob?.isActive == true || sessionCommitted
+    fun installInProgress(): Boolean =
+        transferActive || installJob?.isActive == true || sessionCommitted
+
+    /**
+     * One download-plus-install at a time. [download] deletes older files in the
+     * updates directory, so it must run inside this lock, including the install
+     * that still needs the file.
+     */
+    internal suspend fun <T> exclusiveTransfer(block: suspend () -> T): T {
+        return transfer.withLock {
+            transferActive = true
+            try {
+                block()
+            } finally {
+                transferActive = false
+            }
+        }
+    }
 
     fun addProgressListener(listener: (UpdateProgress) -> Unit) {
         progressListeners.add(listener)
@@ -143,20 +167,23 @@ class UpdateChecker @Inject constructor(
             return
         }
         progressDialogRequested = showDialog
-        val token = prepareInstallSession()
         installJob = installScope.launch {
+            var token = 0
             try {
-                pendingOffer = null
-                val file = download(release) { read, total ->
-                    publish(UpdateProgress.Downloading(read, total))
+                exclusiveTransfer {
+                    token = prepareInstallSession()
+                    pendingOffer = null
+                    val file = download(release) { read, total ->
+                        publish(UpdateProgress.Downloading(read, total))
+                    }
+                    publish(UpdateProgress.Installing)
+                    withContext(Dispatchers.IO) { install(file, token) }
                 }
-                publish(UpdateProgress.Installing)
-                withContext(Dispatchers.IO) { install(file, token) }
             } catch (e: CancellationException) {
-                finishProgress(token)
+                if (token != 0) finishProgress(token)
                 throw e
             } catch (e: Exception) {
-                finishProgress(token)
+                if (token != 0) finishProgress(token)
                 val detail = e.message?.takeIf { it.isNotBlank() }
                     ?: context.getString(R.string.update_failed_generic)
                 Toast.makeText(
@@ -169,9 +196,17 @@ class UpdateChecker @Inject constructor(
         }
     }
 
+    /**
+     * Writes to a `.partial` file, checks the length and checksum, then renames
+     * onto the final APK. Call only from [exclusiveTransfer]: [destination]
+     * removes older files in the updates directory.
+     */
     suspend fun download(release: AppRelease, onProgress: (read: Long, total: Long) -> Unit): File =
         withContext(Dispatchers.IO) {
+            check(transfer.isLocked) { "download must run inside exclusiveTransfer" }
             val dest = destination(release.apkName)
+            val partial = File(dest.parentFile, dest.name + ".partial")
+            partial.delete()
             val digest = MessageDigest.getInstance("SHA-256")
             try {
                 val request = Request.Builder().url(release.downloadUrl).build()
@@ -180,18 +215,18 @@ class UpdateChecker @Inject constructor(
                 } catch (e: IOException) {
                     throw IOException("Couldn't reach GitHub.", e)
                 }
-                response.use {
+                val expected = response.use {
                     if (!response.isSuccessful) {
                         error("Download failed (HTTP ${response.code}).")
                     }
                     val body = response.body ?: error("Download was empty.")
-                    val expected = when {
+                    val expectedLength = when {
                         release.size > 0 -> release.size
                         body.contentLength() > 0 -> body.contentLength()
                         else -> -1L
                     }
-                    body.byteStream().use { input ->
-                        dest.outputStream().use { output ->
+                    FileOutputStream(partial).use { output ->
+                        body.byteStream().use { input ->
                             val buffer = ByteArray(8192)
                             var written = 0L
                             var lastPercent = -1
@@ -199,23 +234,30 @@ class UpdateChecker @Inject constructor(
                             while (true) {
                                 val n = input.read(buffer)
                                 if (n < 0) break
+                                if (expectedLength > 0 && written + n > expectedLength) {
+                                    error("Download size does not match the release.")
+                                }
                                 output.write(buffer, 0, n)
                                 digest.update(buffer, 0, n)
                                 written += n
-                                val percent = if (expected > 0) ((written * 100) / expected).toInt() else -1
+                                val percent = if (expectedLength > 0) ((written * 100) / expectedLength).toInt() else -1
                                 val now = System.currentTimeMillis()
-                                val report = if (expected > 0) percent != lastPercent else now - lastReport >= 200
+                                val report = if (expectedLength > 0) percent != lastPercent else now - lastReport >= 200
                                 if (report) {
                                     lastPercent = percent
                                     lastReport = now
-                                    withContext(Dispatchers.Main) { onProgress(written, expected) }
+                                    withContext(Dispatchers.Main) { onProgress(written, expectedLength) }
                                 }
                             }
-                            withContext(Dispatchers.Main) { onProgress(written, expected) }
+                            withContext(Dispatchers.Main) { onProgress(written, expectedLength) }
                         }
+                        output.fd.sync()
                     }
+                    expectedLength
                 }
-                if (release.size > 0 && dest.length() != release.size) {
+                if (release.size > 0L) {
+                    if (partial.length() != release.size) error("Download size does not match the release.")
+                } else if (expected > 0L && partial.length() != expected) {
                     error("Download size does not match the release.")
                 }
                 val expectedHash = release.sha256
@@ -225,8 +267,14 @@ class UpdateChecker @Inject constructor(
                         error("Download checksum does not match the release.")
                     }
                 }
+                if (!partial.renameTo(dest)) {
+                    partial.copyTo(dest, overwrite = true)
+                    partial.delete()
+                }
+                if (!dest.isFile || dest.length() == 0L) error("Download was empty.")
                 dest
             } catch (e: Exception) {
+                partial.delete()
                 dest.delete()
                 throw e
             }
@@ -237,6 +285,7 @@ class UpdateChecker @Inject constructor(
     }
 
     private fun install(apk: File, token: Int) {
+        verifyInstallable(apk)
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
             setSize(apk.length())
@@ -375,6 +424,92 @@ class UpdateChecker @Inject constructor(
             }
         }
         if (cancelNotification) UpdateNotifier.cancel(context)
+    }
+
+    /**
+     * Package name, versionCode, and current signer hashes must match this install,
+     * and the archive versionCode must be strictly newer. A missing signer fails closed.
+     * This runs before a session exists, so failure does not set the relaunch flag.
+     */
+    private fun verifyInstallable(apk: File) {
+        val installed = identityOf(installedPackageInfo())
+            ?: error("This update is signed with a different key.")
+        val archive = archiveIdentity(apk) ?: error("This update is for a different app.")
+        val reason = UpdatePolicy.rejectInstall(installed, archive)
+        if (reason != null) error(reason)
+    }
+
+    private fun signingFlags(): Int {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            @Suppress("DEPRECATION")
+            PackageManager.GET_SIGNATURES
+        }
+    }
+
+    private fun installedPackageInfo(): PackageInfo? {
+        val flags = signingFlags()
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(
+                    context.packageName,
+                    PackageManager.PackageInfoFlags.of(flags.toLong()),
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, flags)
+            }
+        } catch (_: PackageManager.NameNotFoundException) {
+            null
+        }
+    }
+
+    private fun archiveIdentity(apk: File): ApkIdentity? {
+        val path = apk.absolutePath
+        val flags = signingFlags()
+        val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.packageManager.getPackageArchiveInfo(
+                path,
+                PackageManager.PackageInfoFlags.of(flags.toLong()),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageArchiveInfo(path, flags)
+        } ?: return null
+        info.applicationInfo?.let { appInfo ->
+            appInfo.sourceDir = path
+            appInfo.publicSourceDir = path
+        }
+        return identityOf(info)
+    }
+
+    private fun identityOf(info: PackageInfo?): ApkIdentity? {
+        if (info == null) return null
+        val name = info.packageName ?: return null
+        val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            info.versionCode.toLong()
+        }
+        return ApkIdentity(packageName = name, versionCode = code, signers = signerHashes(info))
+    }
+
+    /** Current contents signers only. Rotation history is not accepted in their place. */
+    private fun signerHashes(info: PackageInfo): Set<String> {
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.signingInfo?.apkContentsSigners
+        } else {
+            @Suppress("DEPRECATION")
+            info.signatures
+        } ?: return emptySet()
+        if (signatures.isEmpty()) return emptySet()
+        val digest = MessageDigest.getInstance("SHA-256")
+        return signatures.map { signature ->
+            digest.reset()
+            digest.digest(signature.toByteArray()).toHex()
+        }.toSet()
     }
 
     private fun destination(name: String): File {

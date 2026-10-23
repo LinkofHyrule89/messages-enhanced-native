@@ -70,14 +70,16 @@ class UpdateDownloadInstallWorker(
         }
         checker.pendingOffer = null
         return try {
-            checker.prepareInstallSession()
-            val file = checker.download(release) { read, total ->
-                UpdateNotifier.show(app, UpdateProgress.Downloading(read, total))
+            checker.exclusiveTransfer {
+                checker.prepareInstallSession()
+                val file = checker.download(release) { read, total ->
+                    UpdateNotifier.show(app, UpdateProgress.Downloading(read, total))
+                }
+                if (isStopped) throw CancellationException("Update download stopped")
+                UpdateNotifier.show(app, UpdateProgress.Installing)
+                UpdateNotifier.showInstalling(app)
+                withContext(Dispatchers.IO) { checker.install(file) }
             }
-            if (isStopped) throw CancellationException("Update download stopped")
-            UpdateNotifier.show(app, UpdateProgress.Installing)
-            UpdateNotifier.showInstalling(app)
-            withContext(Dispatchers.IO) { checker.install(file) }
             Result.success()
         } catch (e: CancellationException) {
             throw e

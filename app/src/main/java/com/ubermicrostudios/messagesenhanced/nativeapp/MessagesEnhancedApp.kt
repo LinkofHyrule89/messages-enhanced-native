@@ -31,6 +31,7 @@ class MessagesEnhancedApp : Application(), ImageLoaderFactory {
         bindPhoneDisplay(this)
         Coil.setImageLoader(imageLoader)
         inboxCache.warm()
+        MessagingService.ensureChannels(this)
         val app = this
         Looper.getMainLooper().queue.addIdleHandler {
             appScope.launch(Dispatchers.IO) {

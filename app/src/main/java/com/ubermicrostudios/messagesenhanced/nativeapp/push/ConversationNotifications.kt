@@ -115,6 +115,18 @@ class ConversationNotifications @Inject constructor(
         }
     }
 
+    /** Drops every conversation notification. Used when the account or server changes. */
+    fun clearAll() {
+        val existing = store.clear()
+        val nm = NotificationManagerCompat.from(context)
+        for (thread in existing) {
+            nm.cancel(MessageNotificationIds.notificationId(thread.conversationId))
+            nm.cancel(MessageNotificationIds.replyErrorId(thread.conversationId))
+            cancelLegacy(thread)
+        }
+        nm.cancel(MessageNotificationIds.SUMMARY_ID)
+    }
+
     /** Drops the conversation's history and its notification. Cancels the summary when nothing is left. */
     fun dismiss(conversationId: String) {
         if (conversationId.isBlank()) return
@@ -125,7 +137,12 @@ class ConversationNotifications @Inject constructor(
             nm.cancel(MessageNotificationIds.notificationId(conversationId))
             nm.cancel(MessageNotificationIds.replyErrorId(conversationId))
             if (removed != null) cancelLegacy(removed) else nm.cancel(conversationId, MessagingService.NOTIF_ID)
-            if (threads.isEmpty()) nm.cancel(MessageNotificationIds.SUMMARY_ID) else postSummary(threads)
+            if (threads.isEmpty()) {
+                nm.cancel(MessageNotificationIds.SUMMARY_ID)
+            } else {
+                MessagingService.ensureChannels(context)
+                postSummary(threads)
+            }
         }
     }
 

@@ -11,6 +11,8 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.AppPreferences
 import com.ubermicrostudios.messagesenhanced.nativeapp.push.FcmConfig
 import com.ubermicrostudios.messagesenhanced.nativeapp.push.Push
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.runCatchingCancellable
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -27,7 +29,7 @@ class PushRepository @Inject constructor(
     fun hideMessageText(): Boolean = prefs.hideMessageText
 
     suspend fun subscribe(hideText: Boolean = prefs.hideMessageText): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val config = api.pushConfig()
             if (!config.available || config.fcm == null) {
                 error("Push is not available on this server.")
@@ -52,15 +54,26 @@ class PushRepository @Inject constructor(
     }
 
     suspend fun unsubscribe(): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
             val token = Push.savedToken(context)
             if (token.isNotBlank()) {
-                runCatching {
+                try {
                     api.pushUnsubscribe(PushUnsubscribeRequest(Push.fcmEndpoint(token)))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // The server call can fail. The phone still drops its subscription.
                 }
             }
             Push.clearToken(context)
             prefs.notificationsEnabled = false
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            Push.clearToken(context)
+            prefs.notificationsEnabled = false
+            throw e
+        } catch (e: Throwable) {
+            Result.failure(e)
         }
     }
 
@@ -70,7 +83,7 @@ class PushRepository @Inject constructor(
             return
         }
         Push.saveToken(context, token, markChanged = false)
-        runCatching {
+        runCatchingCancellable {
             api.pushSubscribe(
                 PushSubscribeRequest(
                     endpoint = Push.fcmEndpoint(token),
@@ -82,7 +95,7 @@ class PushRepository @Inject constructor(
     }
 
     suspend fun setHideText(hide: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val token = Push.savedToken(context)
             if (token.isBlank()) error("Not subscribed.")
             val resp = api.pushSettings(
@@ -94,7 +107,7 @@ class PushRepository @Inject constructor(
     }
 
     suspend fun sendTest(): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val token = Push.savedToken(context)
             if (token.isBlank()) error("Not subscribed.")
             val resp = api.pushTest(PushTestRequest(Push.fcmEndpoint(token)))

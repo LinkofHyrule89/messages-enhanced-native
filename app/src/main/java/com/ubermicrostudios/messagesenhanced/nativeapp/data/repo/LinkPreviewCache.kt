@@ -3,6 +3,7 @@ package com.ubermicrostudios.messagesenhanced.nativeapp.data.repo
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.LinkPreviewDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.BaseUrlProvider
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.MessagesApi
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.runCatchingCancellable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -44,12 +45,13 @@ class LinkPreviewCache @Inject constructor(
             if (memory.containsKey(url) || !inflight.add(url)) return
         }
         scope.launch {
-            val preview = runCatching { api.linkPreview(url) }.getOrNull()?.takeIf { it.usable() }
-            synchronized(memory) {
-                memory[url] = preview
-                inflight.remove(url)
+            try {
+                val preview = runCatchingCancellable { api.linkPreview(url) }.getOrNull()?.takeIf { it.usable() }
+                synchronized(memory) { memory[url] = preview }
+                _revision.value = _revision.value + 1
+            } finally {
+                synchronized(memory) { inflight.remove(url) }
             }
-            _revision.value = _revision.value + 1
         }
     }
 }

@@ -9,6 +9,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.MessagesReposit
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.PushRepository
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.ThemeRepository
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.AppSettingsSync
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.runCatchingCancellable
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.NetErrors
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,19 +59,19 @@ class SettingsViewModel @Inject constructor(
                 _state.update { it.copy(appearance = mode.ifBlank { AppSettingsSync.DARK }) }
             }
         }
-        viewModelScope.launch { runCatching { themes.ensureLoaded() } }
+        viewModelScope.launch { runCatchingCancellable { themes.ensureLoaded() } }
         loadGrok()
     }
 
     fun onResume() {
-        viewModelScope.launch { runCatching { themes.refresh() } }
+        viewModelScope.launch { runCatchingCancellable { themes.refresh() } }
         loadGrok()
     }
 
     fun refreshEverything() {
         viewModelScope.launch {
             _state.update { it.copy(busy = true, message = null) }
-            runCatching { messages.refreshEverything() }
+            runCatchingCancellable { messages.refreshEverything() }
                 .onSuccess { text -> _state.update { it.copy(busy = false, message = text) } }
                 .onFailure { error ->
                     _state.update { it.copy(busy = false, message = NetErrors.friendly(error)) }
@@ -159,7 +160,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _state.update { it.copy(busy = true) }
             auth.logout()
-            runCatching { push.unsubscribe() }
+            runCatchingCancellable { push.unsubscribe() }
             _state.update { it.copy(busy = false, loggedOut = true) }
         }
     }
@@ -170,7 +171,7 @@ class SettingsViewModel @Inject constructor(
 
     private fun loadGrok() {
         viewModelScope.launch {
-            runCatching { messages.grokStatus() }
+            runCatchingCancellable { messages.grokStatus() }
                 .onSuccess { status -> _state.update { it.withGrok(status).copy(busy = it.busy) } }
                 .onFailure {
                     _state.update { it.copy(grokVisible = true, grokUnavailable = true) }
@@ -181,7 +182,7 @@ class SettingsViewModel @Inject constructor(
     private fun saveGrok(enabled: Boolean, trigger: String, groqEnabled: Boolean) {
         viewModelScope.launch {
             _state.update { it.copy(busy = true, message = null) }
-            runCatching { messages.saveGrok(enabled, trigger, groqEnabled) }
+            runCatchingCancellable { messages.saveGrok(enabled, trigger, groqEnabled) }
                 .onSuccess { status ->
                     _state.update { it.withGrok(status).copy(busy = false, message = "Saved.") }
                 }

@@ -13,6 +13,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.MessagesReposit
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.RemoteSearch
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.ThemeRepository
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.FailureWindow
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.runCatchingCancellable
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.HealthBanner
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.InboxSearch
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.NetErrors
@@ -115,7 +116,7 @@ class ConversationsViewModel @Inject constructor(
         publishProfile()
         refreshProfile(force = false)
         viewModelScope.launch {
-            val cached = runCatching { inboxCache.readConversations() }.getOrDefault(emptyList())
+            val cached = runCatchingCancellable { inboxCache.readConversations() }.getOrDefault(emptyList())
             if (!serverListArrived) {
                 _state.update { state ->
                     val conversations = if (state.conversations.isEmpty()) cached else state.conversations
@@ -126,7 +127,7 @@ class ConversationsViewModel @Inject constructor(
             }
             refresh(initial = true)
         }
-        viewModelScope.launch { runCatching { themes.refresh() } }
+        viewModelScope.launch { runCatchingCancellable { themes.refresh() } }
         viewModelScope.launch {
             typing.names.collect { names -> _state.update { it.copy(typingNames = names) } }
         }
@@ -214,7 +215,7 @@ class ConversationsViewModel @Inject constructor(
         val seq = ++searchSeq
         _state.update { it.copy(search = it.search.copy(phase = SearchPhase.LOADING, messageError = null)) }
         viewModelScope.launch {
-            val remote = runCatching { messages.search(q) }.getOrElse { error ->
+            val remote = runCatchingCancellable { messages.search(q) }.getOrElse { error ->
                 RemoteSearch(messageError = NetErrors.friendly(error))
             }
             if (seq != searchSeq || _state.value.search.query.trim() != q) return@launch
@@ -249,7 +250,7 @@ class ConversationsViewModel @Inject constructor(
         profileBusy = true
         viewModelScope.launch {
             try {
-                val profile = runCatching { messages.profile() }.getOrNull()
+                val profile = runCatchingCancellable { messages.profile() }.getOrNull()
                 if (profile != null) {
                     profileCheckedAt = System.currentTimeMillis()
                     if (profile.photoHash != profileHash) profileHash = profile.photoHash
@@ -289,7 +290,7 @@ class ConversationsViewModel @Inject constructor(
 
     fun pin(conversation: ConversationDto, pinned: Boolean) {
         viewModelScope.launch {
-            runCatching { messages.pin(conversation.conversationId, pinned) }
+            runCatchingCancellable { messages.pin(conversation.conversationId, pinned) }
                 .onSuccess { response ->
                     _state.update { state ->
                         state.copy(
@@ -325,7 +326,7 @@ class ConversationsViewModel @Inject constructor(
         val id = conversation.conversationId
         if (id.isBlank()) return
         viewModelScope.launch {
-            runCatching { messages.refreshConversation(id) }
+            runCatchingCancellable { messages.refreshConversation(id) }
                 .onSuccess { message ->
                     _state.update { it.copy(notice = message) }
                     refresh()
@@ -340,7 +341,7 @@ class ConversationsViewModel @Inject constructor(
         val id = conversation.conversationId
         if (id.isBlank()) return
         viewModelScope.launch {
-            runCatching { messages.archive(id) }
+            runCatchingCancellable { messages.archive(id) }
                 .onSuccess {
                     prefs.clearLastSelectedConversationId(id)
                     _state.update { state ->
@@ -362,7 +363,7 @@ class ConversationsViewModel @Inject constructor(
         val id = conversation.conversationId
         if (id.isBlank()) return
         viewModelScope.launch {
-            runCatching { messages.trash(id) }
+            runCatchingCancellable { messages.trash(id) }
                 .onSuccess {
                     prefs.clearLastSelectedConversationId(id)
                     _state.update { state ->
@@ -392,7 +393,7 @@ class ConversationsViewModel @Inject constructor(
                     refreshing = userInitiated,
                 )
             }
-            runCatching { messages.conversations() }
+            runCatchingCancellable { messages.conversations() }
                 .onSuccess { list ->
                     failures.success()
                     if (gen != refreshGen) {

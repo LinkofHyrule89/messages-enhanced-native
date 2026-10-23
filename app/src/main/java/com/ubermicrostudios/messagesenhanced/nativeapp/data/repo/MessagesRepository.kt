@@ -28,6 +28,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.SendRequest
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.SendResponse
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.MessagesApi
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.IdempotencyKeys
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.runCatchingCancellable
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.MessageActions
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
@@ -39,6 +40,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.coroutines.CancellationException
 import retrofit2.HttpException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -69,7 +71,7 @@ class MessagesRepository @Inject constructor(
      */
     suspend fun jumpWindow(conversationId: String, timestampMs: Long): Int {
         val afterMs = maxOf(1L, timestampMs - 1)
-        val count = runCatching {
+        val count = runCatchingCancellable {
             api.listMessages(conversationId, limit = 1000, after = afterMs).size
         }.getOrDefault(20)
         return InboxSearch.messageWindow(count)
@@ -79,7 +81,7 @@ class MessagesRepository @Inject constructor(
 
     /** Web Start chat: `/api/app/contacts`, falling back to `/api/contacts`. */
     suspend fun contacts(): ContactsResponse =
-        runCatching { api.appContacts() }.getOrElse {
+        runCatchingCancellable { api.appContacts() }.getOrElse {
             val all = api.contacts(limit = 500)
             ContactsResponse(top = all.take(8), all = all)
         }
@@ -92,8 +94,8 @@ class MessagesRepository @Inject constructor(
      * A conversation-search failure still shows message hits, and the reverse.
      */
     suspend fun search(query: String): RemoteSearch {
-        val conversations = runCatching { api.searchConversations(query, limit = 20) }.getOrDefault(emptyList())
-        val messages = runCatching { api.searchMessages(query, limit = 60) }
+        val conversations = runCatchingCancellable { api.searchConversations(query, limit = 20) }.getOrDefault(emptyList())
+        val messages = runCatchingCancellable { api.searchMessages(query, limit = 60) }
         return if (messages.isSuccess) {
             RemoteSearch(conversations, messages.getOrThrow())
         } else {
@@ -109,7 +111,7 @@ class MessagesRepository @Inject constructor(
 
     /** GET /api/media/{id}. Throws "couldn't load the attachment" or "attachment too large". */
     suspend fun downloadMedia(messageId: String): MediaFile {
-        val body = runCatching { api.media(messageId) }.getOrElse {
+        val body = runCatchingCancellable { api.media(messageId) }.getOrElse {
             throw IllegalStateException("couldn't load the attachment")
         }
         val mime = body.contentType()?.toString()?.substringBefore(';')?.trim().orEmpty()
@@ -167,12 +169,13 @@ class MessagesRepository @Inject constructor(
     }
 
     suspend fun deleteMessage(messageId: String): DeleteMessageResponse =
-        runCatching { api.deleteMessage(DeleteMessageRequest(messageId)) }.getOrElse { explain(it) }
+        runCatchingCancellable { api.deleteMessage(DeleteMessageRequest(messageId)) }.getOrElse { explain(it) }
 
     private fun explain(error: Throwable): Nothing {
+        if (error is CancellationException) throw error
         if (error is HttpException) {
-            val raw = runCatching { error.response()?.errorBody()?.string() }.getOrNull().orEmpty()
-            val parsed = runCatching {
+            val raw = runCatchingCancellable { error.response()?.errorBody()?.string() }.getOrNull().orEmpty()
+            val parsed = runCatchingCancellable {
                 JsonConfig.json.parseToJsonElement(raw).jsonObject["error"]?.jsonPrimitive?.contentOrNull
             }.getOrNull()
             if (!parsed.isNullOrBlank()) error(parsed)
@@ -182,7 +185,7 @@ class MessagesRepository @Inject constructor(
     }
 
     /** GET /api/gifs or /api/gifs/trending. Throws the server's error text (including a missing GIF key). */
-    suspend fun gifs(query: String, page: Int, limit: Int = 32): GifPage = runCatching {
+    suspend fun gifs(query: String, page: Int, limit: Int = 32): GifPage = runCatchingCancellable {
         if (query.isBlank()) api.trendingGifs(limit, page) else api.searchGifs(query, limit, page)
     }.getOrElse { explain(it) }
 
@@ -193,7 +196,7 @@ class MessagesRepository @Inject constructor(
         caption: String = "",
         replyToId: String = "",
         idempotencyKey: String = IdempotencyKeys.newKey(),
-    ): SendResponse = runCatching {
+    ): SendResponse = runCatchingCancellable {
         api.sendGif(
             SendGifRequest(
                 conversationId = conversationId,
@@ -220,7 +223,7 @@ class MessagesRepository @Inject constructor(
     )
 
     suspend fun markRead(conversationId: String) {
-        runCatching { api.markRead(ReadRequest(conversationId)) }
+        runCatchingCancellable { api.markRead(ReadRequest(conversationId)) }
     }
 
     suspend fun setNotificationMode(conversationId: String, mode: String): ConversationDto =
@@ -250,7 +253,7 @@ class MessagesRepository @Inject constructor(
         val response = api.refreshConversation(ConversationIdRequest(conversationId))
         val raw = (if (response.isSuccessful) response.body() else response.errorBody())?.string().orEmpty()
         val code = response.code()
-        val obj = runCatching { JsonConfig.json.parseToJsonElement(raw).jsonObject }.getOrNull()
+        val obj = runCatchingCancellable { JsonConfig.json.parseToJsonElement(raw).jsonObject }.getOrNull()
         return when (code) {
             200, 202 -> "Refresh started."
             429 -> {
@@ -270,7 +273,7 @@ class MessagesRepository @Inject constructor(
     private fun requireOk(response: retrofit2.Response<okhttp3.ResponseBody>, fallback: String) {
         val raw = (if (response.isSuccessful) response.body() else response.errorBody())?.string().orEmpty()
         if (response.isSuccessful) return
-        val err = runCatching {
+        val err = runCatchingCancellable {
             JsonConfig.json.parseToJsonElement(raw).jsonObject["error"]?.jsonPrimitive?.contentOrNull
         }.getOrNull()
         error(if (err.isNullOrBlank()) "$fallback (HTTP ${response.code()})." else err)
@@ -281,7 +284,7 @@ class MessagesRepository @Inject constructor(
         val response = api.startRefresh(RefreshRequest("all"))
         val raw = (if (response.isSuccessful) response.body() else response.errorBody())?.string().orEmpty()
         val code = response.code()
-        val obj = runCatching { JsonConfig.json.parseToJsonElement(raw).jsonObject }.getOrNull()
+        val obj = runCatchingCancellable { JsonConfig.json.parseToJsonElement(raw).jsonObject }.getOrNull()
         return when (code) {
             200, 202 -> "Refresh started."
             429 -> {

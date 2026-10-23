@@ -21,11 +21,10 @@ data class SemVer(
 
         fun parse(raw: String): SemVer? {
             val match = PATTERN.matchEntire(raw.trim()) ?: return null
-            return SemVer(
-                major = match.groupValues[1].toInt(),
-                minor = match.groupValues[2].toInt(),
-                patch = match.groupValues[3].toInt(),
-            )
+            val major = match.groupValues[1].toIntOrNull() ?: return null
+            val minor = match.groupValues[2].toIntOrNull() ?: return null
+            val patch = match.groupValues[3].toIntOrNull() ?: return null
+            return SemVer(major, minor, patch)
         }
 
         /** True when [candidate] (tag or version) is strictly newer than [current]. */

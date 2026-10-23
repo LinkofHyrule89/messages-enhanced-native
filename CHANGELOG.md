@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.6.6
+
+- Signing out, or saving a different server address, clears the chats and message notifications stored on this phone so the next sign-in does not show the previous account.
+- An app update is installed only when the downloaded file is this app, signed with the same key, and a newer version. A download that stops early is discarded.
+- Opening a photo no longer reads a file path that sits outside this app's cache.
+- A notification reply stays tied to the conversation it was sent from.
+
 ## v0.6.5
 
 - Replies in the photo viewer show the sender's photo, and fall back to colored initials when that photo can't be loaded.

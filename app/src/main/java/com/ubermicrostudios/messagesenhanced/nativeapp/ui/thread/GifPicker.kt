@@ -17,6 +17,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.GifPage
 import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.DialogGifBinding
 import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemGifBinding
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ComposerPlan
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.runCatchingCancellable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -141,7 +142,7 @@ class GifPicker(
         binding.gifMore.isVisible = append
         binding.gifMore.text = "Loading more GIFs..."
         scope.launch {
-            val outcome = runCatching { search(requested, pageToLoad) }
+            val outcome = runCatchingCancellable { search(requested, pageToLoad) }
             if (gen != generation || dialog?.isShowing != true) return@launch
             loading = false
             binding.gifMore.isVisible = false

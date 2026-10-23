@@ -9,6 +9,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.WallpaperCateg
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.BaseUrlProvider
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.ThemeRepository
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ThemeScreen
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.runCatchingCancellable
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -75,14 +76,14 @@ class ChatThemeViewModel @Inject constructor(
             draft = fields,
         )
         viewModelScope.launch {
-            runCatching { themes.ensureWallpapers() }
+            runCatchingCancellable { themes.ensureWallpapers() }
                 .onSuccess { list -> _ui.update { it.copy(wallpapers = list, wallpaperError = "") } }
                 .onFailure { error ->
                     _ui.update { it.copy(wallpaperError = ThemeScreen.wallpaperError(error.message.orEmpty())) }
                 }
         }
         viewModelScope.launch {
-            runCatching { themes.fetchConversationTheme(conversationId) }
+            runCatchingCancellable { themes.fetchConversationTheme(conversationId) }
                 .onSuccess { remote ->
                     _ui.update { state ->
                         if (ThemeScreen.key(state.draft) != ThemeScreen.key(state.saved)) state
@@ -131,7 +132,7 @@ class ChatThemeViewModel @Inject constructor(
         viewModelScope.launch {
             val outcome = withContext(Dispatchers.IO) { ThemePhotoImport.import(context, uri) }
             if (gen != importGen) {
-                if (outcome is ThemePhotoImport.Result.Ready) runCatching { File(outcome.path).delete() }
+                if (outcome is ThemePhotoImport.Result.Ready) runCatchingCancellable { File(outcome.path).delete() }
                 return@launch
             }
             when (outcome) {
@@ -159,7 +160,7 @@ class ChatThemeViewModel @Inject constructor(
         val draft = state.draft
         _ui.value = state.copy(busy = true)
         viewModelScope.launch {
-            runCatching { themes.applyDraft(state.conversationId, draft) }
+            runCatchingCancellable { themes.applyDraft(state.conversationId, draft) }
                 .onSuccess { _ui.update { it.copy(busy = false, done = true) } }
                 .onFailure { error ->
                     _ui.update { it.copy(busy = false) }
@@ -176,7 +177,7 @@ class ChatThemeViewModel @Inject constructor(
     }
 
     override fun onCleared() {
-        stagedPaths.forEach { path -> runCatching { File(path).delete() } }
+        stagedPaths.forEach { path -> runCatchingCancellable { File(path).delete() } }
         stagedPaths.clear()
         super.onCleared()
     }
