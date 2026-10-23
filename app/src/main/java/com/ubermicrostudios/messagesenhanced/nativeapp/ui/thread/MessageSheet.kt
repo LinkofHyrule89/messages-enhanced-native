@@ -40,6 +40,7 @@ class MessageSheet(
         fun onDelete(message: MessageDto)
         fun onSelect(message: MessageDto)
         fun onInfo(message: MessageDto)
+        fun onDetails(message: MessageDto)
         fun onReact(message: MessageDto, emoji: String)
     }
 
@@ -169,6 +170,7 @@ class MessageSheet(
         if (sheet.showDelete) add(R.drawable.ic_delete, "Delete") { host.onDelete(it) }
         if (sheet.showSelect) add(R.drawable.ic_select, "Select more") { host.onSelect(it) }
         if (sheet.showInfo) add(R.drawable.ic_info_outline, "Info") { host.onInfo(it) }
+        add(R.drawable.ic_info, "Details") { host.onDetails(it) }
     }
 
     private fun place(bubble: View, mine: Boolean) {

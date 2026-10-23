@@ -13,6 +13,8 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.MuteRequest
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.GifPage
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.GrokStatus
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.GrokUpdate
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.HealthResponse
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.PairingResponse
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.MessageDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.NotificationModeRequest
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.PinRequest
@@ -225,4 +227,12 @@ interface MessagesApi {
 
     @POST("/api/app/grok")
     suspend fun updateGrok(@Body body: GrokUpdate): GrokStatus
+
+    /** Server health monitor. Failures are ignored by [com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.HealthRepository]. */
+    @GET("/api/app/health")
+    suspend fun appHealth(): HealthResponse
+
+    /** Google Messages pairing and connection. Same failure policy as [appHealth]. */
+    @GET("/api/app/pairing")
+    suspend fun appPairing(): PairingResponse
 }

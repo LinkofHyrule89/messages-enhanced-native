@@ -78,6 +78,7 @@
 -keep class com.google.firebase.installations.** { *; }
 -keep class com.google.firebase.components.** { *; }
 -keep class com.ubermicrostudios.messagesenhanced.nativeapp.push.MessagingService { *; }
+-keep class com.ubermicrostudios.messagesenhanced.nativeapp.push.NotificationActionReceiver { *; }
 
 # PackageInstaller result receiver, and the relaunch after a self-update.
 -keep class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateInstallReceiver { *; }
@@ -94,6 +95,11 @@
     public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
 -keep class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateWorkerEntryPoint { *; }
+-keep class com.ubermicrostudios.messagesenhanced.nativeapp.push.NotificationActionWorker { *; }
+-keepclassmembers class com.ubermicrostudios.messagesenhanced.nativeapp.push.NotificationActionWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}
+-keep class com.ubermicrostudios.messagesenhanced.nativeapp.push.NotificationWorkerEntryPoint { *; }
 
 # Coroutines. ServiceLoader entry points and atomic updaters must keep their names.
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}

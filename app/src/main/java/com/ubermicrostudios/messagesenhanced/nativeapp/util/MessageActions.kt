@@ -145,7 +145,7 @@ object MessageActions {
                     participant.participantId == actor ||
                     participant.participantIdCamel == actor
             } ?: return@map ""
-            if (person.me) "You" else person.name.ifBlank { person.number }
+            if (person.me) "You" else formatPhoneForDisplay(person.name.ifBlank { person.number })
         }.filter { it.isNotBlank() }
     }
 
@@ -239,16 +239,22 @@ object MessageActions {
         add("Type", messageType(message))
         if (message.isFromMe) {
             add("From", "You")
-            add("To", conversationName)
+            add("To", formatPhoneForDisplay(conversationName))
             add("Sent", whenText)
         } else {
             val name = message.senderName.ifBlank { conversationName }
             val number = message.senderNumber
-            val from = if (number.isNotBlank() && number != message.senderName) "$name ($number)" else name
+            val from = if (number.isNotBlank() && number != message.senderName) {
+                "${formatPhoneForDisplay(name)} (${formatPhoneForDisplay(number)})"
+            } else {
+                formatPhoneForDisplay(name)
+            }
             add("From", from)
             add("Received", whenText)
         }
-        add("Status", infoStatus(message))
+        val status = infoStatus(message)
+        val readBy = MessageStatus.readByNames(status)
+        add("Status", if (readBy.isNullOrEmpty()) formatPhoneForDisplay(status) else formatPhonesInText(status, readBy))
         add("Sent via", protocolText(sourcePlatform, metaProtocol, e2ee, hasMedia(message)))
         add("Reactions", reactionSummary(message.reactions, participants))
         if (starred) add("Starred", "Yes (on this server)")

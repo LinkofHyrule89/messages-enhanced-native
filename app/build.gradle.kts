@@ -15,8 +15,8 @@ android {
         applicationId = "com.ubermicrostudios.messagesenhanced.nativeapp"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.6.3"
+        versionCode = 10
+        versionName = "0.6.4"
         buildConfigField("String", "GITHUB_OWNER", "\"LinkofHyrule89\"")
         buildConfigField("String", "GITHUB_REPO", "\"messages-enhanced-native\"")
     }
@@ -86,6 +86,7 @@ dependencies {
     implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.constraintlayout)
     implementation(libs.androidx.recyclerview)
+    implementation(libs.androidx.viewpager2)
     implementation(libs.androidx.swiperefreshlayout)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)

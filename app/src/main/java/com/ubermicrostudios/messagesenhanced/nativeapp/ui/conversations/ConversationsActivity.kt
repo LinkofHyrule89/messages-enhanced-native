@@ -1,16 +1,17 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.ui.conversations
 
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.appcompat.app.AlertDialog
 import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.FragmentResultListener
@@ -26,12 +27,17 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ActivityConve
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.Insets
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.SessionActivity
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.settings.SettingsActivity
+import com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread.DetailsSheet
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread.ThreadActivity
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread.ThreadFragment
+import com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread.ThreadMenu
+import com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread.ThreadViewModel
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateChecker
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdatePrompts
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ConversationOrder
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.HealthBanner
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -48,6 +54,9 @@ class ConversationsActivity : SessionActivity() {
     private lateinit var searchAdapter: SearchAdapter
     private var writingSearch = false
     private var shownProfileKey: String? = null
+    private var threadServerError = false
+    private var bannerPhase = BannerPhase.HIDDEN
+    private var bannerGeneration = 0
 
     private val twoPane: Boolean
         get() = binding.threadContainer != null
@@ -72,6 +81,11 @@ class ConversationsActivity : SessionActivity() {
         Insets.enable(this)
         binding = ActivityConversationsBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // Tablet: clip the thread pane to bg_thread_pane's rounded top-right corner.
+        binding.threadContainer?.apply {
+            outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+            clipToOutline = true
+        }
         updatePrompts = UpdatePrompts(this, updateChecker)
         val refreshSpan = (64 * resources.displayMetrics.density).toInt()
         if (twoPane) {
@@ -172,6 +186,7 @@ class ConversationsActivity : SessionActivity() {
         val listListener = FragmentResultListener { _, _ -> viewModel.onResume() }
         supportFragmentManager.setFragmentResultListener(ThreadFragment.RESULT_LIST, this, listListener)
         supportFragmentManager.setFragmentResultListener(ThreadFragment.RESULT_CLOSE, this) { _, _ ->
+            threadServerError = false
             supportFragmentManager.findFragmentById(R.id.thread_container)?.let { fragment ->
                 supportFragmentManager.beginTransaction().remove(fragment).commit()
             }
@@ -179,6 +194,10 @@ class ConversationsActivity : SessionActivity() {
             viewModel.select(null)
             adapter.selectedId = null
             viewModel.onResume()
+        }
+        supportFragmentManager.setFragmentResultListener(ThreadFragment.RESULT_SERVER_ERROR, this) { _, bundle ->
+            threadServerError = bundle.getBoolean(ThreadFragment.EXTRA_SERVER_ERROR, false)
+            if (::binding.isInitialized) bindHealthBanner(viewModel.state.value)
         }
 
         lifecycleScope.launch {
@@ -200,6 +219,7 @@ class ConversationsActivity : SessionActivity() {
     }
 
     override fun onDestroy() {
+        if (::binding.isInitialized) binding.healthBanner.animate().cancel()
         if (::updatePrompts.isInitialized) updatePrompts.dismiss()
         super.onDestroy()
     }
@@ -211,6 +231,10 @@ class ConversationsActivity : SessionActivity() {
     }
 
     private fun render(state: ConversationsUiState) {
+        state.closeThreadId?.let { id ->
+            closeThreadPane(id)
+            viewModel.consumeCloseThread()
+        }
         adapter.colors = state.colors
         adapter.typingNames = state.typingNames
         adapter.selectedId = state.selectedId
@@ -254,12 +278,88 @@ class ConversationsActivity : SessionActivity() {
         }
         binding.error.isVisible = !state.error.isNullOrBlank()
         binding.error.text = state.error.orEmpty()
+        bindHealthBanner(state)
         renderProfile(state.profile)
+    }
+
+    /**
+     * Health banner sits under the app bar. It fades out when the connection recovers.
+     * A server-unreachable error (this screen, or the open thread on a tablet) hides it
+     * immediately so only that error shows.
+     */
+    private fun bindHealthBanner(state: ConversationsUiState) {
+        val unreachable = !state.error.isNullOrBlank() || threadServerError || threadReportsServerError()
+        val banner = HealthBanner.forDisplay(state.healthBanner, unreachable)
+        if (banner == null) dismissHealthBanner(immediate = unreachable) else presentHealthBanner(banner)
+    }
+
+    private fun threadReportsServerError(): Boolean {
+        if (binding.threadContainer == null) return false
+        val fragment = supportFragmentManager.findFragmentById(R.id.thread_container) as? ThreadFragment
+        return fragment?.isServerErrorVisible() == true
+    }
+
+    private fun presentHealthBanner(banner: HealthBanner.Banner) {
+        paintHealthBanner(banner)
+        val view = binding.healthBanner
+        if (bannerPhase == BannerPhase.SHOWN || bannerPhase == BannerPhase.ENTERING) return
+        val generation = ++bannerGeneration
+        bannerPhase = BannerPhase.ENTERING
+        view.animate().cancel()
+        view.alpha = 0f
+        view.isVisible = true
+        view.animate().alpha(1f).setDuration(BANNER_FADE_MS).withEndAction {
+            if (generation != bannerGeneration) return@withEndAction
+            bannerPhase = BannerPhase.SHOWN
+            view.alpha = 1f
+        }.start()
+    }
+
+    private fun dismissHealthBanner(immediate: Boolean) {
+        val view = binding.healthBanner
+        if (bannerPhase == BannerPhase.HIDDEN) return
+        val generation = ++bannerGeneration
+        view.animate().cancel()
+        if (immediate || !view.isVisible) {
+            bannerPhase = BannerPhase.HIDDEN
+            view.alpha = 1f
+            view.isVisible = false
+            return
+        }
+        bannerPhase = BannerPhase.EXITING
+        view.animate().alpha(0f).setDuration(BANNER_FADE_MS).withEndAction {
+            if (generation != bannerGeneration) return@withEndAction
+            bannerPhase = BannerPhase.HIDDEN
+            view.isVisible = false
+            view.alpha = 1f
+        }.start()
+    }
+
+    private fun paintHealthBanner(banner: HealthBanner.Banner) {
+        val view = binding.healthBanner
+        val warn = banner.severity == HealthBanner.Severity.WARN
+        val bgAttr = if (warn) {
+            com.google.android.material.R.attr.colorTertiaryContainer
+        } else {
+            com.google.android.material.R.attr.colorErrorContainer
+        }
+        val fgAttr = if (warn) {
+            com.google.android.material.R.attr.colorOnTertiaryContainer
+        } else {
+            com.google.android.material.R.attr.colorOnErrorContainer
+        }
+        val bg = com.google.android.material.color.MaterialColors.getColor(view, bgAttr, if (warn) 0xFF3A3000.toInt() else 0xFF6B2A1A.toInt())
+        val fg = com.google.android.material.color.MaterialColors.getColor(view, fgAttr, if (warn) 0xFFFFE08A.toInt() else 0xFFFFFFFF.toInt())
+        view.setCardBackgroundColor(bg)
+        binding.healthBannerText.text = banner.text
+        binding.healthBannerText.setTextColor(fg)
+        binding.healthBannerIcon.imageTintList = ColorStateList.valueOf(fg)
     }
 
     private fun renderProfile(profile: ProfileUi) {
         val key = listOf(profile.photoUrl, profile.fallbackUrl, profile.initial, profile.colorSeed).joinToString("|")
-        binding.profile.contentDescription = getString(R.string.profile_open_settings) + ", " + profile.name
+        binding.profile.contentDescription =
+            getString(R.string.profile_open_settings) + ", " + formatPhoneForDisplay(profile.name)
         if (key == shownProfileKey) return
         shownProfileKey = key
         val color = Participants.avatarColor(profile.colorSeed)
@@ -333,23 +433,55 @@ class ConversationsActivity : SessionActivity() {
     }
 
     private fun showConversationMenu(conversation: ConversationDto, anchor: View) {
-        if (conversation.googlePinned) {
-            Toast.makeText(this, R.string.pinned_on_phone, Toast.LENGTH_SHORT).show()
-            return
-        }
-        val pinned = conversation.localPinnedAtMs > 0L
-        val popup = PopupMenu(this, anchor)
-        popup.menu.add(
-            0,
-            MENU_PIN,
-            0,
-            if (pinned) R.string.unpin_conversation else R.string.pin_conversation,
+        val current = resolveConversation(conversation)
+        ConversationRowMenu.show(
+            anchor,
+            current,
+            ConversationRowMenu.Actions(
+                details = { showConversationDetails(current) },
+                refresh = { refreshConversation(current) },
+                pin = { viewModel.pin(current, current.localPinnedAtMs <= 0L) },
+                archive = { viewModel.archive(current, getString(R.string.archived_notice)) },
+                trash = { confirmTrash(current) },
+            ),
         )
-        popup.setOnMenuItemClickListener {
-            viewModel.pin(conversation, !pinned)
-            true
+    }
+
+    private fun showConversationDetails(conversation: ConversationDto) {
+        val me = Participants.parse(conversation.participants).firstOrNull { it.me }
+        DetailsSheet.show(this, conversation, viewModel.origin(), Participants.profileName(me))
+    }
+
+    private fun refreshConversation(conversation: ConversationDto) {
+        val name = formatPhoneForDisplay(Participants.displayName(conversation))
+        Toast.makeText(this, getString(R.string.refreshing_conversation, name), Toast.LENGTH_SHORT).show()
+        viewModel.refreshConversation(conversation)
+    }
+
+    private fun confirmTrash(conversation: ConversationDto) {
+        val name = formatPhoneForDisplay(Participants.displayName(conversation))
+        val dialog = AlertDialog.Builder(this)
+            .setMessage(getString(R.string.trash_confirm, name))
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.menu_trash) { _, _ -> viewModel.trash(conversation) }
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(ThreadMenu.DANGER)
         }
-        popup.show()
+        dialog.show()
+    }
+
+    /** Tablet: leave the empty pane when the open conversation was just trashed. */
+    private fun closeThreadPane(conversationId: String) {
+        if (binding.threadContainer == null) return
+        val fragment = supportFragmentManager.findFragmentById(R.id.thread_container)
+        if (fragment != null) {
+            val openId = fragment.arguments?.getString(ThreadViewModel.ARG_ID).orEmpty()
+            if (openId != conversationId) return
+            supportFragmentManager.beginTransaction().remove(fragment).commit()
+        }
+        binding.threadPlaceholder?.isVisible = true
+        threadServerError = false
     }
 
     private fun openThread(conv: ConversationDto, jumpId: String? = null, jumpTs: Long = 0L) {
@@ -369,9 +501,11 @@ class ConversationsActivity : SessionActivity() {
         }
     }
 
+    private enum class BannerPhase { HIDDEN, ENTERING, SHOWN, EXITING }
+
     companion object {
         const val ACTION_OPEN_THREAD = "com.ubermicrostudios.messagesenhanced.nativeapp.OPEN_THREAD"
         const val EXTRA_CONV = "conv"
-        private const val MENU_PIN = 1
+        private const val BANNER_FADE_MS = 180L
     }
 }

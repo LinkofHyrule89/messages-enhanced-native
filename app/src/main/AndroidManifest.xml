@@ -3,6 +3,9 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -72,6 +75,17 @@
             android:windowSoftInputMode="adjustResize" />
 
         <activity
+            android:name=".ui.thread.ImageViewerActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustNothing"
+            android:theme="@style/Theme.MessagesEnhancedNative.Viewer" />
+
+        <activity
+            android:name=".ui.thread.MessageDetailsActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.thread.ThreadActivity" />
+
+        <activity
             android:name=".ui.thread.ChatThemeActivity"
             android:exported="false"
             android:parentActivityName=".ui.thread.ThreadActivity"
@@ -115,6 +129,10 @@
 
         <receiver
             android:name=".update.UpdateActionReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".push.NotificationActionReceiver"
             android:exported="false" />
 
         <service

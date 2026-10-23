@@ -437,6 +437,49 @@ data class GrokUpdate(
     @SerialName("groq_enabled") val groqEnabled: Boolean? = null,
 )
 
+/** GET /api/app/health. `checks` is the server monitor's current look at Google and the VPN. */
+@Serializable
+data class HealthCheckDto(
+    val name: String = "",
+    val ok: Boolean = false,
+    val detail: String = "",
+    @SerialName("down_since_ms") val downSinceMs: Long = 0L,
+    val alerted: Boolean = false,
+    @SerialName("checked_ms") val checkedMs: Long = 0L,
+)
+
+@Serializable
+data class HealthResponse(
+    val enabled: Boolean = false,
+    val checks: List<HealthCheckDto> = emptyList(),
+    @SerialName("alert_after_ms") val alertAfterMs: Long = 0L,
+)
+
+/**
+ * `google` object on GET /api/app/pairing.
+ * [phoneResponding] stays null when the field is absent: only an explicit false means the phone is offline.
+ */
+@Serializable
+data class GoogleConnectionDto(
+    val connected: Boolean = false,
+    val connecting: Boolean = false,
+    @SerialName("needs_pairing") val needsPairing: Boolean = false,
+    @SerialName("needs_repair") val needsRepair: Boolean = false,
+    @SerialName("phone_responding") val phoneResponding: Boolean? = null,
+)
+
+@Serializable
+data class PairingStateDto(
+    val state: String = "",
+)
+
+/** GET /api/app/pairing. Unknown keys (cookies, emoji, timestamps) are ignored. */
+@Serializable
+data class PairingResponse(
+    val google: GoogleConnectionDto? = null,
+    val pairing: PairingStateDto? = null,
+)
+
 @Serializable
 data class StoredCookie(
     val name: String,

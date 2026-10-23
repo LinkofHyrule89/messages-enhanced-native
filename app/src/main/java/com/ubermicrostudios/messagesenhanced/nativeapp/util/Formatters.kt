@@ -1,5 +1,6 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.util
 
+import android.text.format.DateUtils
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -17,6 +18,20 @@ object Formatters {
             parts.size == 1 -> parts[0].take(2).uppercase(Locale.getDefault())
             else -> (parts[0].take(1) + parts[1].take(1)).uppercase(Locale.getDefault())
         }
+    }
+
+    /**
+     * Short relative age for the photo viewer, via [DateUtils].
+     * Abbreviated, so a recent photo reads like "17 min. ago".
+     */
+    fun relativeTime(timestampMs: Long, nowMs: Long = System.currentTimeMillis()): CharSequence {
+        if (timestampMs <= 0L) return ""
+        return DateUtils.getRelativeTimeSpanString(
+            timestampMs,
+            nowMs,
+            DateUtils.MINUTE_IN_MILLIS,
+            DateUtils.FORMAT_ABBREV_RELATIVE,
+        )
     }
 
     /** Clock time only, for the timestamp inside a bubble. */

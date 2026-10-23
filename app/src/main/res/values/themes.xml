@@ -17,6 +17,10 @@
         <item name="toolbarStyle">@style/Widget.MessagesEnhanced.Toolbar</item>
     </style>
 
+    <style name="Theme.MessagesEnhancedNative.Viewer" parent="Theme.MessagesEnhancedNative">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+
     <style name="Widget.MessagesEnhanced.Toolbar" parent="Widget.Material3.Toolbar">
         <item name="android:background">@color/panel</item>
         <item name="titleTextColor">@color/text</item>

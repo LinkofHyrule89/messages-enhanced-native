@@ -36,6 +36,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.util.ComposerPlan
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ThemeColors
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ThemePalettes
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ThemeScreen
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import java.io.File
@@ -118,7 +119,7 @@ class ChatThemeActivity : SessionActivity() {
         val enabled = ThemeScreen.applyEnabled(ui.inCategory, ui.busy, draft, ui.saved, ui.catBefore)
         title = ThemeScreen.title(ui.inCategory, ui.categoryName)
         binding.title.text = ThemeScreen.title(ui.inCategory, ui.categoryName)
-        binding.subtitle.text = ThemeScreen.subtitle(ui.inCategory, ui.contactName)
+        binding.subtitle.text = ThemeScreen.subtitle(ui.inCategory, formatPhoneForDisplay(ui.contactName))
         binding.apply.text = ThemeScreen.applyLabel(ui.inCategory, ui.busy)
         binding.apply.isEnabled = enabled
         binding.apply.setTextColor(if (enabled) INK else getColor(R.color.muted))

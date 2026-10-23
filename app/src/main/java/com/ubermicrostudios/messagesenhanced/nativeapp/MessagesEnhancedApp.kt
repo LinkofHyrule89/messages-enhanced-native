@@ -8,6 +8,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.push.MessagingService
 import com.ubermicrostudios.messagesenhanced.nativeapp.push.Push
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateCheckWorker
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.EmojiCatalog
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.bindPhoneDisplay
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -18,6 +19,7 @@ class MessagesEnhancedApp : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        bindPhoneDisplay(this)
         EmojiCatalog.load(this)
         Coil.setImageLoader(imageLoader)
         runCatching { MessagingService.ensureChannels(this) }

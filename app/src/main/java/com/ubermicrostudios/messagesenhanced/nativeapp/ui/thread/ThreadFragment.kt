@@ -57,6 +57,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.util.LinkUrls
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.MessageActions
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.MessageRuns
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -116,6 +117,7 @@ class ThreadFragment : Fragment() {
         }
     }
     private var shownChrome: ThreadChrome? = null
+    private var serverErrorShown: Boolean? = null
     private var wallpaperUrl: String? = null
     private var messageSignature = ""
     private var shownReplyId: String? = null
@@ -203,6 +205,21 @@ class ThreadFragment : Fragment() {
             onQuote = { id -> scrollToQuote(id) },
             syncGesture = { view -> gestures?.sync(view) },
             onRecycled = { view -> gestures?.onRecycled(view) },
+            onImage = { message ->
+                val state = viewModel.state.value
+                ImageViewerActivity.open(
+                    context = requireContext(),
+                    messages = state.messages,
+                    tapped = message,
+                    conversationId = state.conversationId,
+                    title = state.title,
+                    isGroup = state.isGroup,
+                    sourcePlatform = state.sourcePlatform,
+                    protocol = state.protocol.ifBlank { state.displayProtocol },
+                    encryption = state.encryption,
+                    origin = viewModel.baseUrl.origin(),
+                )
+            },
         )
         gestures = ThreadGestures(
             recyclerView = binding.messages,
@@ -295,7 +312,7 @@ class ThreadFragment : Fragment() {
     }
 
     private fun render(state: ThreadUiState) {
-        binding.title.text = state.title.ifBlank { getString(R.string.thread_title) }
+        binding.title.text = formatPhoneForDisplay(state.title.ifBlank { getString(R.string.thread_title) })
         val rows = MessageRuns.rows(state.messages, state.isGroup)
         val signature = state.messages.joinToString("\n") {
             "${it.messageId}\u0000${it.status}\u0000${it.statusText}\u0000${it.reactions}"
@@ -323,8 +340,10 @@ class ThreadFragment : Fragment() {
         }
         binding.empty.isVisible = !state.loading && state.messages.isEmpty()
         binding.progress.isVisible = state.loading
-        binding.error.isVisible = !state.error.isNullOrBlank()
+        val serverError = !state.error.isNullOrBlank()
+        binding.error.isVisible = serverError
         binding.error.text = state.error.orEmpty()
+        publishServerError(serverError)
         if (binding.composer.text?.toString() != state.draft) {
             binding.composer.setText(state.draft)
             val cursor = (pendingCursor ?: state.draft.length).coerceIn(0, state.draft.length)
@@ -373,7 +392,7 @@ class ThreadFragment : Fragment() {
         val opened = id != shownReplyId
         if (opened && isNearBottom()) stickToBottom = true
         binding.replyBar.isVisible = true
-        binding.replyLabel.text = replyLabel(reply.author)
+        binding.replyLabel.text = replyLabel(formatPhoneForDisplay(reply.author))
         binding.replySnippet.text = reply.snippet
         if (!opened) return
         shownReplyId = id
@@ -491,7 +510,7 @@ class ThreadFragment : Fragment() {
     }
 
     private fun confirmTrash(state: ThreadUiState) {
-        val name = state.title.ifBlank { getString(R.string.thread_title) }
+        val name = formatPhoneForDisplay(state.title.ifBlank { getString(R.string.thread_title) })
         val dialog = AlertDialog.Builder(requireContext())
             .setMessage(getString(R.string.trash_confirm, name))
             .setNegativeButton(R.string.cancel, null)
@@ -579,6 +598,10 @@ class ThreadFragment : Fragment() {
             showMessageInfo(message)
         }
 
+        override fun onDetails(message: MessageDto) {
+            openMessageDetails(message)
+        }
+
         override fun onReact(message: MessageDto, emoji: String) {
             EmojiCatalog.remember(emoji)
             viewModel.react(message, emoji)
@@ -632,6 +655,21 @@ class ThreadFragment : Fragment() {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(0xFFFF8589.toInt())
         }
         dialog.show()
+    }
+
+    private fun openMessageDetails(message: MessageDto) {
+        val state = viewModel.state.value
+        val protocol = state.protocol.ifBlank { state.displayProtocol }
+        val encrypted = Encryption.messageEncrypted(message, state.encryption) ||
+            Encryption.protocolEncrypted(state.displayProtocol) ||
+            Encryption.protocolEncrypted(state.protocol)
+        MessageDetailsActivity.open(
+            requireContext(),
+            message,
+            protocol = protocol,
+            encrypted = encrypted,
+            conversationPlatform = message.sourcePlatform.ifBlank { state.sourcePlatform },
+        )
     }
 
     private fun showMessageInfo(message: MessageDto) {
@@ -807,7 +845,24 @@ class ThreadFragment : Fragment() {
         binding.send.imageTintList = ColorStateList.valueOf(foreground)
     }
 
+    /** True while this thread is showing its own "can't reach the server" line. */
+    fun isServerErrorVisible(): Boolean = _binding?.error?.isVisible == true
+
+    private fun publishServerError(showing: Boolean) {
+        if (serverErrorShown == showing) return
+        serverErrorShown = showing
+        // The list hides its health banner while this is up, so the two never stack.
+        runCatching {
+            setFragmentResult(RESULT_SERVER_ERROR, bundleOf(EXTRA_SERVER_ERROR to showing))
+        }
+    }
+
     override fun onDestroyView() {
+        if (serverErrorShown == true) {
+            // Drop the line before notifying, so the list does not still see it as showing.
+            _binding?.error?.isVisible = false
+            publishServerError(false)
+        }
         messagePress?.detach()
         messagePress = null
         messageSheet?.destroy()
@@ -826,6 +881,8 @@ class ThreadFragment : Fragment() {
     companion object {
         const val RESULT_LIST = "thread_list_changed"
         const val RESULT_CLOSE = "thread_close"
+        const val RESULT_SERVER_ERROR = "thread_server_error"
+        const val EXTRA_SERVER_ERROR = "showing"
 
         fun args(conv: ConversationDto, jumpId: String? = null, jumpTs: Long = 0L) = bundleOf(
             ThreadViewModel.ARG_ID to conv.conversationId,

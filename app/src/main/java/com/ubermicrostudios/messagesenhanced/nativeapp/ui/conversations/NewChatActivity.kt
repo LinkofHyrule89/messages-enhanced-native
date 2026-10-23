@@ -19,6 +19,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ContactDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ActivityNewChatBinding
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.Insets
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.SessionActivity
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
@@ -104,7 +105,7 @@ class NewChatActivity : SessionActivity() {
         val density = resources.displayMetrics.density
         chips.forEach { chip ->
             val view = TextView(this).apply {
-                text = chip.displayName + "  ×"
+                text = formatPhoneForDisplay(chip.displayName) + "  ×"
                 setTextColor(getColor(R.color.text))
                 textSize = 14f
                 setPadding((12 * density).toInt(), (6 * density).toInt(), (12 * density).toInt(), (6 * density).toInt())

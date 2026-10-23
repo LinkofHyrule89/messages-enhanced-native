@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.6.4
+
+- Tap a photo in a conversation to open it full screen and swipe through every photo in the chat, starting from the one you tapped, with the next photo peeking in at the edge. Each photo sits on a rounded card over a blurred copy of itself. Pinch, drag, or double-tap to zoom; while zoomed, dragging moves the photo instead of changing pages. Swipe down or go back to close. The top shows who sent it and how long ago, plus download, delete, and a menu with Forward, Share, and Details. React along the bottom, or open replies to read comments and add one. Download saves to Pictures/Messages Enhanced.
+- Message details, from that photo menu or from a message's long-press menu, shows the message and when it was sent or received, plus the message type when the chat's protocol is known.
+- Phone numbers are shown in your country's format wherever a name or number is displayed, such as (801) 555-1234 in the US. Emails, names, and short codes stay as written. Numbers that are sent, saved, or used to find a chat are unchanged.
+- Group details shows your profile photo on your own row.
+- Connection banner on the conversation list, on phones and tablets. When the VPN or Google Messages has been down for at least 30 seconds, it says so and shows the time it went down. If those checks are healthy, it shows pairing status: not paired, the phone not responding, or connecting / disconnected once that state has lasted 30 seconds. The banner hides while the app can't reach the server. A failed health or pairing check does not show an error or a toast.
+- Long-press a conversation for its menu: group or contact details, refresh from your phone, pin or unpin, archive, and move to trash.
+- Tablet: the open conversation's top bar rounds its top-right corner to mirror the list.
+- Each chat has one notification listing the recent unread messages, with Reply and Mark as read. Reply sends without opening the app and adds your message to that notification. A failed reply posts “Couldn't send reply” and opens the chat when tapped. Mark as read clears that chat's notification. Unread chats are grouped, and the summary goes away when the last one is cleared. Opening a chat clears its notification too.
+
 ## v0.6.3
 
 - Background download and install. Tapping Update downloads the APK in the background with a progress notification (Downloading %), then installs it, so you can leave the app. On Android 12+ the install is silent when the system allows it; otherwise the usual install prompt is shown, with a notification that has an Install action.

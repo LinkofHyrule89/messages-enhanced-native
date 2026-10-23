@@ -15,6 +15,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemConversat
 import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemSearchHitBinding
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.InboxSearch
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
 
 sealed class SearchRow {
     data class Header(val title: String) : SearchRow()
@@ -74,7 +75,7 @@ class SearchAdapter(
 
     private inner class HitHolder(val binding: ItemSearchHitBinding) : RecyclerView.ViewHolder(binding.root) {
         fun bindConversation(conversation: ConversationDto) {
-            val name = Participants.convName(conversation).ifBlank { "Conversation" }
+            val name = formatPhoneForDisplay(Participants.convName(conversation).ifBlank { "Conversation" })
             binding.title.text = highlight(name, query, binding.root.context.getColor(R.color.search_mark))
             binding.preview.isVisible = false
             binding.time.isVisible = false
@@ -82,9 +83,9 @@ class SearchAdapter(
         }
 
         fun bindMessage(hit: InboxSearch.MessageHit) {
-            binding.title.text = hit.title
+            binding.title.text = formatPhoneForDisplay(hit.title)
             val mark = binding.root.context.getColor(R.color.search_mark)
-            val shown = hit.prefix + hit.body
+            val shown = displayPrefix(hit.prefix) + hit.body
             val spanned = highlight(shown, query, mark)
             binding.preview.isVisible = shown.isNotBlank()
             binding.preview.text = spanned
@@ -111,6 +112,11 @@ class SearchAdapter(
     companion object {
         private const val VIEW_HEADER = 1
         private const val VIEW_HIT = 2
+
+        private fun displayPrefix(prefix: String): String {
+            if (!prefix.endsWith(": ")) return formatPhoneForDisplay(prefix)
+            return formatPhoneForDisplay(prefix.removeSuffix(": ")) + ": "
+        }
 
         fun highlight(text: String, query: String, color: Int): CharSequence {
             if (query.isBlank()) return text

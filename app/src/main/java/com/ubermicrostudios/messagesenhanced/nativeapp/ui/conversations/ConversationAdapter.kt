@@ -24,6 +24,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.util.MessageStatus
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ReceiptKind
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ThemeColors
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
 
 class ConversationAdapter(
     private val origin: () -> String,
@@ -106,13 +107,13 @@ class ConversationAdapter(
             val text = context.getColor(R.color.text)
             val muted = context.getColor(R.color.muted)
             val name = Participants.displayName(item)
-            b.name.text = name
+            b.name.text = formatPhoneForDisplay(name)
             val unread = item.unreadCount > 0
             b.name.setTextColor(text)
             b.name.typeface = nameWeight(unread)
             val typing = typingNames[item.conversationId].orEmpty()
             if (typing.isNotEmpty()) {
-                b.preview.text = TypingTracker.labelFor(typing, item.isGroup)
+                b.preview.text = TypingTracker.labelFor(typing.map { formatPhoneForDisplay(it) }, item.isGroup)
                 b.preview.setTextColor(colors.accent)
                 b.preview.setTypeface(Typeface.SANS_SERIF, if (unread) Typeface.BOLD_ITALIC else Typeface.ITALIC)
                 b.statusIcon.isVisible = false

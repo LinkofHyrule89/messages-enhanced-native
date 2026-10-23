@@ -6,10 +6,12 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDt
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.SseClient
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.TypingTracker
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.AuthRepository
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.HealthRepository
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.MessagesRepository
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.RemoteSearch
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.ThemeRepository
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.FailureWindow
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.HealthBanner
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.InboxSearch
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.NetErrors
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
@@ -52,8 +54,12 @@ data class ConversationsUiState(
     val typingNames: Map<String, List<String>> = emptyMap(),
     val colors: ThemeColors = ThemeColors.Default,
     val notice: String? = null,
+    /** Trash succeeded for this id. The list activity closes the tablet pane when it is open. */
+    val closeThreadId: String? = null,
     val search: SearchUi = SearchUi(),
     val profile: ProfileUi = ProfileUi(),
+    /** Google / VPN connection. Null when healthy. Hidden in the UI while [error] is showing. */
+    val healthBanner: HealthBanner.Banner? = null,
 )
 
 @HiltViewModel
@@ -63,6 +69,7 @@ class ConversationsViewModel @Inject constructor(
     private val sse: SseClient,
     private val typing: TypingTracker,
     private val themes: ThemeRepository,
+    private val health: HealthRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ConversationsUiState())
@@ -81,7 +88,15 @@ class ConversationsViewModel @Inject constructor(
     private var profileRetriedEmpty = false
 
     init {
-        if (auth.hasSession()) sse.ensureStarted()
+        if (auth.hasSession()) {
+            sse.ensureStarted()
+            health.start()
+            viewModelScope.launch {
+                health.banner.collect { banner ->
+                    _state.update { it.copy(healthBanner = banner) }
+                }
+            }
+        }
         publishProfile()
         refreshProfile(force = false)
         refresh(initial = true)
@@ -102,7 +117,10 @@ class ConversationsViewModel @Inject constructor(
     }
 
     fun onResume() {
-        if (auth.hasSession()) sse.ensureStarted()
+        if (auth.hasSession()) {
+            sse.ensureStarted()
+            health.refresh()
+        }
         failures.onForeground()
         _state.update { it.copy(error = null) }
         refreshProfile(force = false)
@@ -229,6 +247,7 @@ class ConversationsViewModel @Inject constructor(
         val name = Participants.profileName(self)
         val origin = origin()
         val photo = Participants.profilePhotoUrl(origin, profileHash)
+        publishedProfilePhotoUrl = photo
         _state.update {
             it.copy(
                 profile = ProfileUi(
@@ -269,6 +288,65 @@ class ConversationsViewModel @Inject constructor(
 
     fun consumeNotice() {
         _state.update { it.copy(notice = null) }
+    }
+
+    fun consumeCloseThread() {
+        _state.update { it.copy(closeThreadId = null) }
+    }
+
+    /** Re-read one conversation from the phone, then reload the list. */
+    fun refreshConversation(conversation: ConversationDto) {
+        val id = conversation.conversationId
+        if (id.isBlank()) return
+        viewModelScope.launch {
+            runCatching { messages.refreshConversation(id) }
+                .onSuccess { message ->
+                    _state.update { it.copy(notice = message) }
+                    refresh()
+                }
+                .onFailure { error ->
+                    _state.update { it.copy(notice = NetErrors.friendly(error)) }
+                }
+        }
+    }
+
+    fun archive(conversation: ConversationDto, successNotice: String) {
+        val id = conversation.conversationId
+        if (id.isBlank()) return
+        viewModelScope.launch {
+            runCatching { messages.archive(id) }
+                .onSuccess {
+                    _state.update { state ->
+                        state.copy(
+                            conversations = state.conversations.filter { it.conversationId != id },
+                            notice = successNotice,
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _state.update { it.copy(notice = NetErrors.friendly(error)) }
+                }
+        }
+    }
+
+    fun trash(conversation: ConversationDto) {
+        val id = conversation.conversationId
+        if (id.isBlank()) return
+        viewModelScope.launch {
+            runCatching { messages.trash(id) }
+                .onSuccess {
+                    _state.update { state ->
+                        state.copy(
+                            conversations = state.conversations.filter { it.conversationId != id },
+                            selectedId = if (state.selectedId == id) null else state.selectedId,
+                            closeThreadId = id,
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _state.update { it.copy(notice = NetErrors.friendly(error)) }
+                }
+        }
     }
 
     /**
@@ -341,15 +419,29 @@ class ConversationsViewModel @Inject constructor(
         sseJob = viewModelScope.launch {
             sse.events.collect { event ->
                 when (event.type) {
+                    // "status" and "reconnected" also refresh the health banner (HealthRepository).
                     "conversations", "messages", "reconnected" -> scheduleRefresh()
                 }
             }
         }
     }
 
+    override fun onCleared() {
+        health.stop()
+        super.onCleared()
+    }
+
     companion object {
         private const val SEARCH_DEBOUNCE_MS = 250L
         private const val PROFILE_TTL_MS = 30L * 60L * 1000L
         private const val PROFILE_RETRY_MS = 15_000L
+
+        /**
+         * Account photo URL last written by [publishProfile].
+         * The group-details self row uses this, the same URL as the app bar avatar.
+         */
+        @Volatile
+        var publishedProfilePhotoUrl: String? = null
+            private set
     }
 }

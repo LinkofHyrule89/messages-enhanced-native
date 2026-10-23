@@ -9,6 +9,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.SseClient
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.TypingTracker
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.MessagesRepository
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.ThemeRepository
+import com.ubermicrostudios.messagesenhanced.nativeapp.push.ConversationNotifications
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.GifPage
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ComposerPlan
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ConversationEncryption
@@ -18,6 +19,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDt
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.MessageActions
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ReplyTexts
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.SwipeMath
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ThemeColors
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.IdempotencyKeys
@@ -85,6 +87,7 @@ class ThreadViewModel @Inject constructor(
     private val typing: TypingTracker,
     private val themes: ThemeRepository,
     val baseUrl: BaseUrlProvider,
+    private val conversationNotifications: ConversationNotifications,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -149,6 +152,7 @@ class ThreadViewModel @Inject constructor(
     ) {
         val changed = _state.value.conversationId != conversationId
         if (changed) _state.value.pending.forEach { File(it.path).delete() }
+        if (conversationId.isNotBlank()) conversationNotifications.dismiss(conversationId)
         _state.update {
             it.copy(
                 conversationId = conversationId,
@@ -237,7 +241,11 @@ class ThreadViewModel @Inject constructor(
                         (markRead || (foreground && newestIncoming > lastReadMarkedTs))
                     ) {
                         lastReadMarkedTs = maxOf(lastReadMarkedTs, newestIncoming)
-                        launch { messagesRepo.markRead(id); effect(ThreadEffect.ListChanged) }
+                        launch {
+                            messagesRepo.markRead(id)
+                            conversationNotifications.dismiss(id)
+                            effect(ThreadEffect.ListChanged)
+                        }
                     }
                     // Drop stale responses: a slower older request must not overwrite a newer one.
                     if (gen != refreshGen || _state.value.conversationId != id) return@onSuccess
@@ -817,7 +825,7 @@ class ThreadViewModel @Inject constructor(
         typingJob = viewModelScope.launch {
             typing.names.collect { map ->
                 if (_state.value.conversationId != id) return@collect
-                val label = TypingTracker.labelFor(map[id].orEmpty(), isGroup)
+                val label = TypingTracker.labelFor(map[id].orEmpty().map { formatPhoneForDisplay(it) }, isGroup)
                 _state.update { it.copy(typingLabel = label) }
             }
         }

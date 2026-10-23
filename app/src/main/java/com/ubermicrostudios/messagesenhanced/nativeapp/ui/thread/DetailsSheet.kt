@@ -16,9 +16,11 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.DialogGroupDe
 import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemDetailsMemberBinding
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.conversations.AvatarBinder
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.conversations.AvatarTarget
+import com.ubermicrostudios.messagesenhanced.nativeapp.ui.conversations.ConversationsViewModel
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Formatters
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.GroupDetails
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
 
 /** Group / contact details sheet matching web `openDetails` and screenshot F. */
 object DetailsSheet {
@@ -37,8 +39,8 @@ object DetailsSheet {
         )
         val binding = DialogGroupDetailsBinding.inflate(LayoutInflater.from(context))
         binding.detailsTitle.text = content.title
-        binding.detailsName.text = content.name
-        binding.detailsSub.text = content.subtitle
+        binding.detailsName.text = formatPhoneForDisplay(content.name)
+        binding.detailsSub.text = formatPhoneForDisplay(content.subtitle)
         binding.detailsSub.isVisible = content.subtitle.isNotBlank()
         binding.detailsMembersLabel.isVisible = content.showMembers
         binding.detailsMembers.isVisible = content.showMembers
@@ -57,9 +59,9 @@ object DetailsSheet {
             val inflater = LayoutInflater.from(context)
             content.members.forEach { member ->
                 val row = ItemDetailsMemberBinding.inflate(inflater, binding.detailsMembers, true)
-                row.name.text = member.name
+                row.name.text = memberLabel(member.name)
                 row.number.isVisible = member.number.isNotBlank()
-                row.number.text = member.number
+                row.number.text = formatPhoneForDisplay(member.number)
                 paintMember(row, origin, member.person, member.name)
             }
             content.empty?.let { message ->
@@ -96,15 +98,37 @@ object DetailsSheet {
             shape = GradientDrawable.OVAL
             setColor(Participants.avatarColor(seed))
         }
-        val url = Participants.personAvatarUrl(origin, person)
+        val profileUrl = if (person.me) ConversationsViewModel.publishedProfilePhotoUrl else null
+        val fallback = Participants.personAvatarUrl(origin, person)
+        val url = profileUrl?.takeIf { it.isNotBlank() } ?: fallback
         if (url.isNullOrBlank()) {
             row.avatarPhoto.isVisible = false
-        } else {
-            row.avatarPhoto.isVisible = true
-            row.avatarPhoto.load(url) {
-                transformations(CircleCropTransformation())
-                listener(onError = { _, _ -> row.avatarPhoto.isVisible = false })
-            }
+            row.avatarPhoto.setImageDrawable(null)
+            return
         }
+        row.avatarPhoto.isVisible = true
+        row.avatarPhoto.load(url) {
+            transformations(CircleCropTransformation())
+            listener(
+                onError = { _, _ ->
+                    val next = fallback?.takeIf { it.isNotBlank() && it != url }
+                    if (next == null) {
+                        row.avatarPhoto.isVisible = false
+                    } else {
+                        row.avatarPhoto.load(next) {
+                            transformations(CircleCropTransformation())
+                            listener(onError = { _, _ -> row.avatarPhoto.isVisible = false })
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    /** "Ada (you)" keeps the suffix; a phone number in that name is formatted. */
+    private fun memberLabel(name: String): String {
+        val suffix = " (you)"
+        if (!name.endsWith(suffix)) return formatPhoneForDisplay(name)
+        return formatPhoneForDisplay(name.removeSuffix(suffix)) + suffix
     }
 }

@@ -15,17 +15,20 @@ import com.google.firebase.messaging.RemoteMessage
 import com.ubermicrostudios.messagesenhanced.nativeapp.R
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.PushRepository
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.conversations.ConversationsActivity
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 
 @AndroidEntryPoint
 class MessagingService : FirebaseMessagingService() {
 
     @Inject lateinit var pushRepository: PushRepository
+    @Inject lateinit var notifications: ConversationNotifications
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -33,11 +36,21 @@ class MessagingService : FirebaseMessagingService() {
         if (Push.initSaved(this) == null) return
         val data = message.data
         when (data["type"]) {
-            "clear" -> {
-                val tag = data["tag"]?.takeIf { it.isNotEmpty() } ?: return
-                NotificationManagerCompat.from(this).cancel(tag, NOTIF_ID)
+            "clear" -> clear(data)
+            "alert" -> showSimple(data)
+            "message", "test" -> {
+                val shown = runBlocking(Dispatchers.IO) { notifications.showIncoming(data) }
+                if (!shown) showSimple(data)
             }
-            "message", "alert", "test" -> show(data)
+        }
+    }
+
+    private fun clear(data: Map<String, String>) {
+        val key = MessageNotificationPayload.conversationKey(data)
+        val tag = data["tag"].orEmpty()
+        if (key.isNotEmpty()) notifications.dismiss(key)
+        if (tag.isNotEmpty() && tag != key) {
+            NotificationManagerCompat.from(this).cancel(tag, NOTIF_ID)
         }
     }
 
@@ -48,12 +61,16 @@ class MessagingService : FirebaseMessagingService() {
         }
     }
 
-    private fun show(data: Map<String, String>) {
+    /** Alerts, and message pushes that have no conversation id, stay a single text notification. */
+    private fun showSimple(data: Map<String, String>) {
         if (!notificationsGranted(this)) return
         val tag = data["tag"]?.takeIf { it.isNotEmpty() } ?: data["conv"].orEmpty().ifBlank { "message" }
         ensureChannels(this)
         val channel = if (data["type"] == "alert") CHANNEL_ALERTS else CHANNEL_MESSAGES
-        val title = data["title"].orEmpty().ifBlank { getString(R.string.app_name) }
+        val rawPerson = data["person"].orEmpty().ifBlank { data["sender_name"].orEmpty() }.ifBlank { data["sender"].orEmpty() }
+        val title = formatPhoneForDisplay(
+            data["title"].orEmpty().ifBlank { rawPerson }.ifBlank { getString(R.string.app_name) },
+        )
         val body = data["body"].orEmpty()
         val whenMs = data["ts"]?.toLongOrNull()?.takeIf { it > 0L } ?: System.currentTimeMillis()
         val conv = data["conv"].orEmpty()

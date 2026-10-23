@@ -14,6 +14,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemContactBi
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Formatters
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.NewChat
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
 
 class ContactAdapter(
     private val origin: () -> String,
@@ -68,9 +69,9 @@ class ContactAdapter(
     private inner class ContactHolder(val binding: ItemContactBinding) : RecyclerView.ViewHolder(binding.root) {
         fun bind(row: NewChat.Row.Contact) {
             val contact = row.contact
-            binding.name.text = contact.displayName
+            binding.name.text = formatPhoneForDisplay(contact.displayName)
             binding.number.isVisible = contact.displayName != contact.phone && contact.phone.isNotBlank()
-            binding.number.text = contact.phone
+            binding.number.text = formatPhoneForDisplay(contact.phone)
             paintAvatar(contact.displayName, contact.phone, contact)
             binding.root.setBackgroundColor(if (row.selected) 0x332A6FE0 else Color.TRANSPARENT)
             binding.root.setOnClickListener { onContact(contact) }
@@ -78,7 +79,7 @@ class ContactAdapter(
 
         fun bindSendTo(row: NewChat.Row.SendTo) {
             val prefix = if (row.group) "Add " else "Send to "
-            binding.name.text = prefix + row.query
+            binding.name.text = prefix + formatPhoneForDisplay(row.query)
             binding.number.isVisible = false
             paintAvatar(row.query, row.query, null)
             binding.root.setBackgroundColor(Color.TRANSPARENT)

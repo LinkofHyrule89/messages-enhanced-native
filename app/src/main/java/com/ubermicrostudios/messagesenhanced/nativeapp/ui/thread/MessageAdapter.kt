@@ -47,6 +47,8 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ReceiptKind
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ReplyTexts
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ThemeColors
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhonesInText
 
 class MessageAdapter(
     private val mediaUrl: (MessageDto) -> String,
@@ -60,6 +62,7 @@ class MessageAdapter(
     private val onQuote: (String) -> Unit,
     private val syncGesture: (View) -> Unit,
     private val onRecycled: (View) -> Unit,
+    private val onImage: (MessageDto) -> Unit,
 ) : ListAdapter<MessageRuns.Row, RecyclerView.ViewHolder>(Diff) {
 
     var starredIds: Set<String> = emptySet()
@@ -206,7 +209,7 @@ class MessageAdapter(
 
         val senderName = item.senderName.ifBlank { item.senderNumber }
         sender.isVisible = row.showSender && senderName.isNotBlank()
-        sender.text = senderName
+        sender.text = formatPhoneForDisplay(senderName)
         sender.setTextColor(look.colors.light)
 
         bubble.background = bubbleDrawable(density, fromMe, row.pos, BubbleColors.fill(look.colors, fromMe))
@@ -269,6 +272,11 @@ class MessageAdapter(
         bindLink(item.body, linkCard, linkImage, linkSite, linkTitle, linkDesc)
         bindReceipt(row, kind, receipt, receiptAvatars, receiptLabel, receiptIcon, look)
         bindTapDetail(item, locked, tapDetail, tapDetailText, tapDetailLock)
+        if (image.isVisible) {
+            image.setOnClickListener { if (!selecting) onImage(item) }
+        } else {
+            image.setOnClickListener(null)
+        }
         image.isClickable = image.isVisible
         reactions.isClickable = reactions.isVisible
     }
@@ -283,7 +291,7 @@ class MessageAdapter(
         val open = item.messageId == detailId
         box.isVisible = open
         if (!open) return
-        text.text = MessageStatus.detailLine(item)
+        text.text = displayReadBy(MessageStatus.detailLine(item), item.statusText)
         lock.isVisible = locked
         lock.imageTintList = ColorStateList.valueOf(box.context.getColor(R.color.muted))
     }
@@ -325,7 +333,7 @@ class MessageAdapter(
         }
         val conv = conversation()
         name.isVisible = true
-        name.text = ReplyTexts.author(original, conv.name, conv.isGroup)
+        name.text = formatPhoneForDisplay(ReplyTexts.author(original, conv.name, conv.isGroup))
         text.setTypeface(null, Typeface.NORMAL)
         text.text = ReplyTexts.quoteText(ReplyTexts.snippetSource(original))
         box.isClickable = true
@@ -399,7 +407,7 @@ class MessageAdapter(
         if (names != null && names.isNotEmpty() && !(others > 0 && names.size >= others)) {
             icon.isVisible = false
             label.isVisible = true
-            label.text = row.message.statusText.trim()
+            label.text = displayReadBy(row.message.statusText.trim())
             label.setTextColor(look.colors.light)
             val density = avatars.resources.displayMetrics.density
             val size = (20 * density).toInt()
@@ -416,7 +424,7 @@ class MessageAdapter(
         icon.setImageResource(kind.icon())
         val tint = if (kind == ReceiptKind.READ) look.colors.accent else kind.tint(icon.context)
         icon.imageTintList = ColorStateList.valueOf(tint)
-        icon.contentDescription = row.message.statusText.ifBlank { kind.label }
+        icon.contentDescription = displayReadBy(row.message.statusText.ifBlank { kind.label })
     }
 
     private fun linkify(view: TextView, text: String, linkColor: Int) {
@@ -492,6 +500,12 @@ class MessageAdapter(
             cornerRadii = radii
             setColor(color)
         }
+    }
+
+    private fun displayReadBy(text: String, nameSource: String = text): String {
+        val names = MessageStatus.readByNames(nameSource)
+        if (names.isNullOrEmpty()) return formatPhoneForDisplay(text)
+        return formatPhonesInText(text, names)
     }
 
     private fun readByChip(

@@ -12,6 +12,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.R
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.DialogForwardBinding
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
 
 /** Pick a conversation, matching the web forward sheet's name filter (first 80). */
 object ForwardPicker {
@@ -36,7 +37,7 @@ object ForwardPicker {
             val labels = if (list.isEmpty()) {
                 listOf(context.getString(R.string.forward_empty))
             } else {
-                list.map { Participants.convName(it) }
+                list.map { formatPhoneForDisplay(Participants.convName(it)) }
             }
             binding.forwardList.adapter = object : ArrayAdapter<String>(context, android.R.layout.simple_list_item_1, labels) {
                 override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
