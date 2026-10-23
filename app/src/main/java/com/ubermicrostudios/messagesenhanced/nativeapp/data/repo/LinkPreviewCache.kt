@@ -39,6 +39,14 @@ class LinkPreviewCache @Inject constructor(
 
     fun imageUrl(preview: LinkPreviewDto): String? = preview.absoluteImage(baseUrl.origin())
 
+    fun clear() {
+        synchronized(memory) {
+            memory.clear()
+            inflight.clear()
+        }
+        _revision.value = _revision.value + 1
+    }
+
     fun request(url: String) {
         if (url.isBlank()) return
         synchronized(memory) {

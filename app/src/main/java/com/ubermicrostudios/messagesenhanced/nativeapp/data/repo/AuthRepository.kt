@@ -31,22 +31,38 @@ class AuthRepository @Inject constructor(
     private val sse: SseClient,
     private val inboxCache: InboxCache,
     private val notifications: ConversationNotifications,
+    private val themes: ThemeRepository,
+    private val health: HealthRepository,
+    private val linkPreviews: LinkPreviewCache,
 ) {
-    fun hasSession(): Boolean = prefs.serverUrl.isNotBlank() && cookieJar.hasSessionCookie()
+    fun hasSession(): Boolean {
+        val origin = prefs.serverUrl
+        if (origin.isBlank()) return false
+        val url = PersistentCookieJar.parseServerUrl(origin) ?: return false
+        return cookieJar.hasSessionCookie(url)
+    }
 
     fun serverUrl(): String = prefs.serverUrl
 
     fun saveServerUrl(url: String) {
         val next = url.trim().trimEnd('/')
         val previous = prefs.serverUrl
-        if (previous == next) return
         prefs.serverUrl = next
+        val parsed = PersistentCookieJar.parseServerUrl(next)
+        if (parsed != null) cookieJar.retainFor(parsed) else cookieJar.clear()
+        if (previous == next) return
         if (previous.isNotBlank()) {
             prefs.setLastSelectedConversationId(null)
             inboxCache.clear()
             notifications.clearAll()
-            // The settings screen stays signed in. The next refresh may save the new server.
-            inboxCache.openWrites()
+            themes.clear()
+            linkPreviews.clear()
+            if (hasSession()) {
+                inboxCache.openWrites()
+            } else {
+                sse.stop()
+                health.stop()
+            }
         }
     }
 
@@ -58,10 +74,11 @@ class AuthRepository @Inject constructor(
             .post(body)
             .removeHeader("Origin")
             .build()
+        val originUrl = PersistentCookieJar.parseServerUrl(origin)
         val result = try {
             client.newCall(request).execute().use { resp ->
                 val location = resp.header("Location").orEmpty()
-                val hasSession = cookieJar.hasSessionCookie()
+                val hasSession = originUrl != null && cookieJar.hasSessionCookie(originUrl)
                 when {
                     resp.code == 401 -> LoginResult.WrongSecret
                     resp.code == 429 -> LoginResult.RateLimited
@@ -83,6 +100,7 @@ class AuthRepository @Inject constructor(
     suspend fun logout() = withContext(Dispatchers.IO) {
         try {
             sse.stop()
+            health.stop()
             val origin = baseUrl.origin()
             val request = Request.Builder()
                 .url("$origin/logout")
@@ -100,6 +118,8 @@ class AuthRepository @Inject constructor(
             prefs.setLastSelectedConversationId(null)
             inboxCache.clear()
             notifications.clearAll()
+            themes.clear()
+            linkPreviews.clear()
         }
     }
 }

@@ -3,6 +3,8 @@ package com.ubermicrostudios.messagesenhanced.nativeapp.data.net
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
+import android.os.Handler
+import android.os.Looper
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -61,7 +63,11 @@ class SseClient @Inject constructor(
     @Volatile private var openedOnce = false
     @Volatile private var lastEventAt = 0L
     private var watchdog: Job? = null
+    private val hooksLock = Any()
     private var hooksInstalled = false
+    private var hooksGeneration = 0
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var lifecycleObserver: DefaultLifecycleObserver? = null
 
     fun ensureStarted() {
         running = true
@@ -83,6 +89,8 @@ class SseClient @Inject constructor(
         started.set(false)
         watchdog?.cancel()
         current?.cancel()
+        uninstallHooks()
+        typing.clear()
         kick.trySend(Unit)
     }
 
@@ -94,23 +102,60 @@ class SseClient @Inject constructor(
     }
 
     private fun installHooks() {
-        if (hooksInstalled) return
-        hooksInstalled = true
-        val cm = appContext.getSystemService(ConnectivityManager::class.java)
-        runCatching {
-            cm?.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+        val callback: ConnectivityManager.NetworkCallback
+        val observer: DefaultLifecycleObserver
+        val gen: Int
+        synchronized(hooksLock) {
+            if (hooksInstalled) return
+            hooksInstalled = true
+            gen = ++hooksGeneration
+            callback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
                     requestReconnect()
                 }
-            })
-        }
-        val observer = object : DefaultLifecycleObserver {
-            override fun onStart(owner: LifecycleOwner) {
-                if (openedOnce) requestReconnect()
             }
+            networkCallback = callback
+            observer = object : DefaultLifecycleObserver {
+                override fun onStart(owner: LifecycleOwner) {
+                    if (openedOnce) requestReconnect()
+                }
+            }
+            lifecycleObserver = observer
         }
-        scope.launch(Dispatchers.Main) {
-            ProcessLifecycleOwner.get().lifecycle.addObserver(observer)
+        onMain {
+            synchronized(hooksLock) {
+                if (!hooksInstalled || gen != hooksGeneration) return@onMain
+            }
+            val cm = appContext.getSystemService(ConnectivityManager::class.java)
+            runCatching { cm?.registerDefaultNetworkCallback(callback) }
+            runCatching { ProcessLifecycleOwner.get().lifecycle.addObserver(observer) }
+        }
+    }
+
+    private fun uninstallHooks() {
+        val callback: ConnectivityManager.NetworkCallback?
+        val observer: DefaultLifecycleObserver?
+        synchronized(hooksLock) {
+            if (!hooksInstalled) return
+            hooksInstalled = false
+            hooksGeneration++
+            callback = networkCallback
+            networkCallback = null
+            observer = lifecycleObserver
+            lifecycleObserver = null
+        }
+        onMain {
+            val cm = appContext.getSystemService(ConnectivityManager::class.java)
+            runCatching { if (callback != null) cm?.unregisterNetworkCallback(callback) }
+            runCatching { if (observer != null) ProcessLifecycleOwner.get().lifecycle.removeObserver(observer) }
+        }
+    }
+
+    private fun onMain(block: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            block()
+        } else {
+            Handler(Looper.getMainLooper()).post(block)
         }
     }
 

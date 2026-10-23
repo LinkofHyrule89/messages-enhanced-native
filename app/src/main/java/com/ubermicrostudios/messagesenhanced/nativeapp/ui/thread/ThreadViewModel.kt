@@ -246,6 +246,7 @@ class ThreadViewModel @Inject constructor(
         val id = _state.value.conversationId
         if (id.isBlank()) return
         val gen = ++refreshGen
+        val cacheGen = inboxCache.generation()
         viewModelScope.launch {
             if (_state.value.conversationId == id && _state.value.messages.isEmpty() && serverMessagesFor != id) {
                 val cached = runCatchingCancellable { inboxCache.readMessages(id) }.getOrDefault(emptyList())
@@ -285,8 +286,9 @@ class ThreadViewModel @Inject constructor(
                     }
                     // Drop stale responses: a slower older request must not overwrite a newer one.
                     if (gen != refreshGen || _state.value.conversationId != id) return@onSuccess
+                    if (!inboxCache.isCurrent(cacheGen)) return@onSuccess
                     serverMessagesFor = id
-                    inboxCache.saveMessages(id, list)
+                    inboxCache.saveMessages(id, list, cacheGen)
                     val pending = _state.value.messages.filter { local ->
                         local.messageId.startsWith("local-") && local.status != "OUTGOING_FAILED" &&
                             if (local.mediaId.isBlank()) {

@@ -1,8 +1,14 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.push
 
+import android.content.Context
+import android.content.SharedPreferences
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.JsonConfig
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.StableIdMap
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 
 /**
  * One unread line kept for a conversation notification.
@@ -153,43 +159,92 @@ object MessageNotificationIds {
     const val SLOT_ERROR = 5
     const val SLOT_SUMMARY = 6
 
-    private const val RANGE_START = 20_000
-    private const val RANGE_SPAN = 1_000_003
-    private const val FNV_OFFSET = -2128831035
-    private const val FNV_PRIME = 16777619
+    const val RANGE_START = 20_000
+    const val RANGE_SPAN = 1_000_003
 
-    fun notificationId(conversationId: String): Int = map(conversationId, salt = 0)
+    private const val REQUEST_START = 1
+    private const val REQUEST_SPAN = Int.MAX_VALUE - 1
+    private const val PREFS = "me_native_notif_ids"
+    private const val KEY_NOTIF = "notif"
+    private const val KEY_REQUEST = "request"
+
+    private val lock = Any()
+    private val notifIds = StableIdMap(::isReserved, RANGE_START, RANGE_SPAN)
+    private val requestIds = StableIdMap({ it == 0 }, REQUEST_START, REQUEST_SPAN)
+
+    @Volatile
+    private var persisted: SharedPreferences? = null
+
+    fun bindPersistence(prefs: SharedPreferences) {
+        synchronized(lock) {
+            if (persisted != null) return
+            persisted = prefs
+            notifIds.restore(decodeMap(prefs.getString(KEY_NOTIF, null)))
+            requestIds.restore(decodeMap(prefs.getString(KEY_REQUEST, null)))
+        }
+    }
+
+    fun bindPersistence(context: Context) {
+        bindPersistence(
+            context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE),
+        )
+    }
+
+    fun notificationId(conversationId: String): Int = allocateNotif("n:$conversationId")
 
     fun replyErrorId(conversationId: String): Int {
-        val error = map(conversationId, salt = 1)
-        return if (error == notificationId(conversationId)) error + 1 else error
+        val error = allocateNotif("e:$conversationId")
+        return if (error == notificationId(conversationId)) allocateNotif("e2:$conversationId") else error
     }
 
     /** Stable pending-intent request code. Different slots for one conversation do not collide. */
     fun requestCode(conversationId: String, slot: Int): Int {
-        val mixed = fnv(conversationId, slot) and 0x7fffffff
-        return if (mixed == 0) slot + 1 else mixed
+        val id = requestIds.get("$slot\u001f$conversationId")
+        persist()
+        return id
     }
 
     fun isReserved(id: Int): Boolean =
         id == 0 || id == 1 || id == SUMMARY_ID || id == FOREGROUND_ID || id in 7101..7105
 
-    private fun map(conversationId: String, salt: Int): Int {
-        val positive = fnv(conversationId, salt) and 0x7fffffff
-        val id = RANGE_START + (positive % RANGE_SPAN)
-        return if (isReserved(id)) RANGE_START else id
+    internal fun resetForTests() {
+        synchronized(lock) {
+            notifIds.clear()
+            requestIds.clear()
+            persisted = null
+        }
     }
 
-    /** FNV-1a. Signed overflow is intentional and stable. */
-    private fun fnv(value: String, salt: Int): Int {
-        var hash = FNV_OFFSET
-        hash = hash xor salt
-        hash *= FNV_PRIME
-        for (ch in value) {
-            hash = hash xor ch.code
-            hash *= FNV_PRIME
+    private fun allocateNotif(key: String): Int {
+        val id = notifIds.get(key)
+        persist()
+        return id
+    }
+
+    private fun persist() {
+        val prefs = persisted ?: return
+        synchronized(lock) {
+            prefs.edit()
+                .putString(KEY_NOTIF, encodeMap(notifIds.snapshot()))
+                .putString(KEY_REQUEST, encodeMap(requestIds.snapshot()))
+                .apply()
         }
-        return hash
+    }
+
+    private fun encodeMap(map: Map<String, Int>): String =
+        JsonConfig.json.encodeToString(
+            MapSerializer(String.serializer(), Int.serializer()),
+            map,
+        )
+
+    private fun decodeMap(raw: String?): Map<String, Int> {
+        if (raw.isNullOrBlank()) return emptyMap()
+        return runCatching {
+            JsonConfig.json.decodeFromString(
+                MapSerializer(String.serializer(), Int.serializer()),
+                raw,
+            )
+        }.getOrDefault(emptyMap())
     }
 }
 

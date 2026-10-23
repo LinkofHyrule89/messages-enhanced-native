@@ -57,6 +57,13 @@ class TypingTracker @Inject constructor() {
         synchronized(lock) { publishLocked(now) }
     }
 
+    fun clear() {
+        synchronized(lock) {
+            byConversation.clear()
+            _names.value = emptyMap()
+        }
+    }
+
     fun label(conversationId: String, isGroup: Boolean, now: Long = System.currentTimeMillis()): String {
         val current = synchronized(lock) { namesLocked(conversationId, now) }
         return labelFor(current, isGroup)

@@ -80,6 +80,65 @@ class UpdateLogicTest {
     }
 
     @Test
+    fun rejectInstallAcceptsARotatedKeyWhenTheArchiveLineageIncludesTheCurrentSigner() {
+        val installed = ApkIdentity("app", 11L, setOf("old"))
+        val rotated = ApkIdentity(
+            packageName = "app",
+            versionCode = 12L,
+            signers = setOf("new"),
+            signingHistory = setOf("old", "new"),
+            hasPastSigningCertificates = true,
+        )
+        assertNull(UpdatePolicy.rejectInstall(installed, rotated, allowSigningLineage = true))
+        assertEquals(
+            "This update is signed with a different key.",
+            UpdatePolicy.rejectInstall(installed, rotated, allowSigningLineage = false),
+        )
+        assertEquals(
+            "This update is signed with a different key.",
+            UpdatePolicy.rejectInstall(
+                installed,
+                rotated.copy(signingHistory = setOf("new"), hasPastSigningCertificates = true),
+                allowSigningLineage = true,
+            ),
+        )
+        assertEquals(
+            "This update is signed with a different key.",
+            UpdatePolicy.rejectInstall(
+                installed,
+                rotated.copy(hasPastSigningCertificates = false),
+                allowSigningLineage = true,
+            ),
+        )
+        assertTrue(UpdatePolicy.lineageIncludesCurrentSigner(installed, rotated))
+        assertFalse(
+            UpdatePolicy.lineageIncludesCurrentSigner(
+                installed,
+                rotated.copy(signingHistory = setOf("new")),
+            ),
+        )
+        val both = ApkIdentity("app", 11L, setOf("old", "mid"))
+        assertFalse(
+            UpdatePolicy.lineageIncludesCurrentSigner(
+                both,
+                rotated.copy(signingHistory = setOf("old", "new"), hasPastSigningCertificates = true),
+            ),
+        )
+        assertTrue(
+            UpdatePolicy.lineageIncludesCurrentSigner(
+                both,
+                ApkIdentity(
+                    packageName = "app",
+                    versionCode = 12L,
+                    signers = setOf("new"),
+                    signingHistory = setOf("old", "mid", "new"),
+                    hasPastSigningCertificates = true,
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun releaseJsonReadsTagNotesAndTheApkAsset() {
         val sha = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         val json = """

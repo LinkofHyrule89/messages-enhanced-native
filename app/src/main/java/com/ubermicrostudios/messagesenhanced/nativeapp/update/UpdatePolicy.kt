@@ -70,20 +70,40 @@ object UpdatePolicy {
 
     /**
      * Null when [archive] may be installed over [installed].
-     * The archive package and current signing certs must match, and its versionCode
-     * must be strictly newer. A missing signer fails closed.
+     * The archive package must match and its versionCode must be strictly newer.
+     * A missing signer fails closed. When [allowSigningLineage] is true (API 28+),
+     * a rotated key is accepted if the new APK's signing history includes every
+     * current signer of the installed app.
      */
-    fun rejectInstall(installed: ApkIdentity, archive: ApkIdentity): String? {
+    fun rejectInstall(
+        installed: ApkIdentity,
+        archive: ApkIdentity,
+        allowSigningLineage: Boolean = false,
+    ): String? {
         if (archive.packageName.isBlank() || archive.packageName != installed.packageName) {
             return "This update is for a different app."
         }
         if (archive.versionCode <= installed.versionCode) {
             return "This update is not newer than the installed version."
         }
-        if (installed.signers.isEmpty() || archive.signers.isEmpty() || installed.signers != archive.signers) {
+        if (installed.signers.isEmpty() || archive.signers.isEmpty()) {
             return "This update is signed with a different key."
         }
-        return null
+        if (installed.signers == archive.signers) return null
+        if (allowSigningLineage && lineageIncludesCurrentSigner(installed, archive)) return null
+        return "This update is signed with a different key."
+    }
+
+    /**
+     * The new APK's PackageManager signing-certificate history includes every
+     * current signer of the installed app. [ApkIdentity.hasPastSigningCertificates]
+     * is SigningInfo.hasPastSigningCertificates on the archive.
+     */
+    fun lineageIncludesCurrentSigner(installed: ApkIdentity, archive: ApkIdentity): Boolean {
+        if (!archive.hasPastSigningCertificates) return false
+        val history = archive.signingHistory
+        if (history.isEmpty()) return false
+        return installed.signers.all { it in history }
     }
 }
 
@@ -92,6 +112,8 @@ data class ApkIdentity(
     val packageName: String,
     val versionCode: Long,
     val signers: Set<String>,
+    val signingHistory: Set<String> = signers,
+    val hasPastSigningCertificates: Boolean = false,
 )
 
 sealed class UpdateProgress {

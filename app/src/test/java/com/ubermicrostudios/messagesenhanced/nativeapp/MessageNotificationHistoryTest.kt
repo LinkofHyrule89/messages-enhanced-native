@@ -11,9 +11,16 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 class MessageNotificationHistoryTest {
+
+    @Before
+    fun resetNotificationIds() {
+        MessageNotificationIds.resetForTests()
+    }
+
     @Test
     fun trimKeepsTheNewestLines() {
         val lines = (1..12).map { line("m$it", "Ada", "n$it", it.toLong()) }

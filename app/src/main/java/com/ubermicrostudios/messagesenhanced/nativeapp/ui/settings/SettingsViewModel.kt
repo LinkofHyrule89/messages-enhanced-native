@@ -109,7 +109,12 @@ class SettingsViewModel @Inject constructor(
             return
         }
         auth.saveServerUrl(url)
-        _state.update { it.copy(message = "Server URL saved.") }
+        _state.update {
+            it.copy(
+                message = "Server URL saved.",
+                loggedOut = !auth.hasSession(),
+            )
+        }
     }
 
     fun setNotifications(enabled: Boolean) {

@@ -2,9 +2,8 @@ package com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Looper
 import androidx.core.content.edit
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.JsonConfig
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.StoredCookie
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -13,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
+import java.util.concurrent.CompletableFuture
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,17 +30,42 @@ class AppPreferences @Inject constructor(
     private var lastSelectedLoaded = false
     private var lastSelectedId = ""
 
-    private val secure: SharedPreferences by lazy {
-        val key = MasterKey.Builder(appContext)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            appContext,
-            SECURE_FILE,
-            key,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+    @Volatile
+    private var secureHolder: SharedPreferences? = null
+
+    /**
+     * Opens the encrypted cookie store. First creation is keystore I/O; call from
+     * a background thread at process start. A later main-thread read waits on IO
+     * instead of creating the store on main.
+     */
+    fun warmSecure() {
+        ensureSecure()
+    }
+
+    private fun ensureSecure(): SharedPreferences {
+        secureHolder?.let { return it }
+        if (Looper.getMainLooper().thread == Thread.currentThread()) {
+            val future = CompletableFuture<SharedPreferences>()
+            writer.launch {
+                try {
+                    future.complete(createSecure())
+                } catch (error: Throwable) {
+                    future.completeExceptionally(error)
+                }
+            }
+            return future.get()
+        }
+        return createSecure()
+    }
+
+    private fun createSecure(): SharedPreferences {
+        synchronized(lock) {
+            secureHolder?.let { return it }
+            val created = EncryptedPrefs.openOrNull(appContext, SECURE_FILE)
+                ?: appContext.getSharedPreferences(SECURE_PLAIN_FILE, Context.MODE_PRIVATE)
+            secureHolder = created
+            return created
+        }
     }
 
     var serverUrl: String
@@ -73,7 +98,7 @@ class AppPreferences @Inject constructor(
         set(value) = settings.edit { putBoolean(KEY_HIDE_TEXT, value) }
 
     fun loadCookies(): List<StoredCookie> {
-        val raw = runCatching { secure.getString(KEY_COOKIES, null) }.getOrNull() ?: return emptyList()
+        val raw = runCatching { ensureSecure().getString(KEY_COOKIES, null) }.getOrNull() ?: return emptyList()
         if (raw.isBlank()) return emptyList()
         return runCatching {
             JsonConfig.json.decodeFromString<List<StoredCookie>>(raw)
@@ -82,11 +107,11 @@ class AppPreferences @Inject constructor(
 
     fun saveCookies(cookies: List<StoredCookie>) {
         val raw = JsonConfig.json.encodeToString(cookies)
-        secure.edit { putString(KEY_COOKIES, raw) }
+        ensureSecure().edit { putString(KEY_COOKIES, raw) }
     }
 
     fun clearCookies() {
-        secure.edit { remove(KEY_COOKIES) }
+        ensureSecure().edit { remove(KEY_COOKIES) }
     }
 
     /**
@@ -139,6 +164,7 @@ class AppPreferences @Inject constructor(
     companion object {
         internal const val SETTINGS_FILE = "me_native_settings"
         private const val SECURE_FILE = "me_native_secure"
+        private const val SECURE_PLAIN_FILE = "me_native_secure_plain"
         private const val KEY_SERVER_URL = "server_url"
         private const val KEY_NOTIFICATIONS = "notifications_enabled"
         private const val KEY_HIDE_TEXT = "hide_message_text"

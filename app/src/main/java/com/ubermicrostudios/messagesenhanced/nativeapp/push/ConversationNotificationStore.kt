@@ -19,6 +19,10 @@ class ConversationNotificationStore @Inject constructor(
     private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val lock = Any()
 
+    init {
+        MessageNotificationIds.bindPersistence(context)
+    }
+
     @Volatile
     private var memory: List<NotifThread>? = null
 

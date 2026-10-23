@@ -1,9 +1,11 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.push
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.FcmClientOptions
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.EncryptedPrefs
 import org.json.JSONObject
 
 /**
@@ -12,11 +14,20 @@ import org.json.JSONObject
  */
 object Push {
     const val PREFS = "me_native_push"
+    const val SECURE_PREFS = "me_native_push_secure"
     private const val KEY_CONFIG = "config"
     private const val KEY_TOKEN = "token"
     private const val KEY_TOKEN_CHANGED = "token_changed"
 
     private val lock = Any()
+
+    @Volatile
+    private var cachedPrefs: SharedPreferences? = null
+
+    /** Opens the encrypted FCM store (and migrates plaintext) off the main thread. */
+    fun warm(context: Context) {
+        prefs(context)
+    }
 
     fun init(context: Context, cfg: FcmConfig): FirebaseApp {
         val appContext = context.applicationContext
@@ -79,8 +90,43 @@ object Push {
 
     fun fcmEndpoint(token: String): String = "fcm:$token"
 
-    private fun prefs(context: Context) =
-        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private fun prefs(context: Context): SharedPreferences {
+        cachedPrefs?.let { return it }
+        synchronized(lock) {
+            cachedPrefs?.let { return it }
+            val app = context.applicationContext
+            val plain = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val encrypted = EncryptedPrefs.openOrNull(app, SECURE_PREFS)
+            val store = if (encrypted != null) {
+                migratePlainToEncrypted(plain, encrypted)
+                encrypted
+            } else {
+                plain
+            }
+            cachedPrefs = store
+            return store
+        }
+    }
+
+    /**
+     * Read the old plaintext file, write the encrypted file, then delete the old
+     * keys. A failed encrypted write leaves the plaintext file in place.
+     */
+    private fun migratePlainToEncrypted(plain: SharedPreferences, encrypted: SharedPreferences) {
+        val config = plain.getString(KEY_CONFIG, null)
+        val token = plain.getString(KEY_TOKEN, null)
+        val hasChanged = plain.contains(KEY_TOKEN_CHANGED)
+        if (config == null && token == null && !hasChanged) return
+        val encryptedHas = encrypted.contains(KEY_CONFIG) || encrypted.contains(KEY_TOKEN)
+        if (!encryptedHas) {
+            val edit = encrypted.edit()
+            if (config != null) edit.putString(KEY_CONFIG, config)
+            if (token != null) edit.putString(KEY_TOKEN, token)
+            if (hasChanged) edit.putBoolean(KEY_TOKEN_CHANGED, plain.getBoolean(KEY_TOKEN_CHANGED, false))
+            if (!edit.commit()) return
+        }
+        plain.edit().clear().commit()
+    }
 
     private fun sameOptions(a: FirebaseOptions, b: FirebaseOptions): Boolean =
         a.apiKey == b.apiKey &&

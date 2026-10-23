@@ -427,7 +427,8 @@ class UpdateChecker @Inject constructor(
     }
 
     /**
-     * Package name, versionCode, and current signer hashes must match this install,
+     * Package name, versionCode, and signers must match this install (API 28+ also
+     * accepts a rotated key whose signing history includes the current signer),
      * and the archive versionCode must be strictly newer. A missing signer fails closed.
      * This runs before a session exists, so failure does not set the relaunch flag.
      */
@@ -435,7 +436,8 @@ class UpdateChecker @Inject constructor(
         val installed = identityOf(installedPackageInfo())
             ?: error("This update is signed with a different key.")
         val archive = archiveIdentity(apk) ?: error("This update is for a different app.")
-        val reason = UpdatePolicy.rejectInstall(installed, archive)
+        val allowLineage = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+        val reason = UpdatePolicy.rejectInstall(installed, archive, allowSigningLineage = allowLineage)
         if (reason != null) error(reason)
     }
 
@@ -493,18 +495,42 @@ class UpdateChecker @Inject constructor(
             @Suppress("DEPRECATION")
             info.versionCode.toLong()
         }
-        return ApkIdentity(packageName = name, versionCode = code, signers = signerHashes(info))
+        val signing = signingOf(info)
+        return ApkIdentity(
+            packageName = name,
+            versionCode = code,
+            signers = signing.current,
+            signingHistory = signing.history,
+            hasPastSigningCertificates = signing.hasPast,
+        )
     }
 
-    /** Current contents signers only. Rotation history is not accepted in their place. */
-    private fun signerHashes(info: PackageInfo): Set<String> {
-        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            info.signingInfo?.apkContentsSigners
-        } else {
-            @Suppress("DEPRECATION")
-            info.signatures
-        } ?: return emptySet()
-        if (signatures.isEmpty()) return emptySet()
+    private data class SigningHashes(
+        val current: Set<String>,
+        val history: Set<String>,
+        val hasPast: Boolean,
+    )
+
+    /**
+     * API 28+: current apkContentsSigners plus signingCertificateHistory when
+     * hasPastSigningCertificates is set (a rotated lineage). Below 28, the
+     * deprecated signatures array is the current signers only.
+     */
+    private fun signingOf(info: PackageInfo): SigningHashes {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val signingInfo = info.signingInfo ?: return SigningHashes(emptySet(), emptySet(), false)
+            val current = hashes(signingInfo.apkContentsSigners)
+            val hasPast = signingInfo.hasPastSigningCertificates()
+            val history = if (hasPast) hashes(signingInfo.signingCertificateHistory) else current
+            return SigningHashes(current = current, history = history, hasPast = hasPast)
+        }
+        @Suppress("DEPRECATION")
+        val current = hashes(info.signatures)
+        return SigningHashes(current = current, history = current, hasPast = false)
+    }
+
+    private fun hashes(signatures: Array<android.content.pm.Signature>?): Set<String> {
+        if (signatures.isNullOrEmpty()) return emptySet()
         val digest = MessageDigest.getInstance("SHA-256")
         return signatures.map { signature ->
             digest.reset()

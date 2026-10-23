@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.6.7
+
+- Changing the server address forgets the previous server's sign-in cookie, so this app does not stay signed in under the old account.
+- Notification credentials are stored encrypted on this phone.
+- Chat colors from the previous account are cleared when you sign out.
+- An app update signed with a rotated key is accepted on Android 9 and newer when that update still includes this app's current signer.
+- Each conversation keeps its own notification and reply action, even when many chats are notifying at once.
+
 ## v0.6.6
 
 - Signing out, or saving a different server address, clears the chats and message notifications stored on this phone so the next sign-in does not show the previous account.

@@ -6,6 +6,9 @@ import coil.Coil
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.cache.InboxCache
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.PersistentCookieJar
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.AppPreferences
+import com.ubermicrostudios.messagesenhanced.nativeapp.push.MessageNotificationIds
 import com.ubermicrostudios.messagesenhanced.nativeapp.push.MessagingService
 import com.ubermicrostudios.messagesenhanced.nativeapp.push.Push
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateCheckWorker
@@ -23,6 +26,8 @@ class MessagesEnhancedApp : Application(), ImageLoaderFactory {
 
     @Inject lateinit var imageLoader: ImageLoader
     @Inject lateinit var inboxCache: InboxCache
+    @Inject lateinit var cookieJar: PersistentCookieJar
+    @Inject lateinit var prefs: AppPreferences
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -30,9 +35,15 @@ class MessagesEnhancedApp : Application(), ImageLoaderFactory {
         super.onCreate()
         bindPhoneDisplay(this)
         Coil.setImageLoader(imageLoader)
+        MessageNotificationIds.bindPersistence(this)
         inboxCache.warm()
         MessagingService.ensureChannels(this)
         val app = this
+        appScope.launch(Dispatchers.IO) {
+            runCatching { prefs.warmSecure() }
+            runCatching { cookieJar.warm() }
+            runCatching { Push.warm(app) }
+        }
         Looper.getMainLooper().queue.addIdleHandler {
             appScope.launch(Dispatchers.IO) {
                 runCatching { EmojiCatalog.load(app) }

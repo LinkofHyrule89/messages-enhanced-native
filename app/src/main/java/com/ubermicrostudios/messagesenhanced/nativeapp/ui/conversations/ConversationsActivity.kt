@@ -223,6 +223,10 @@ class ConversationsActivity : SessionActivity() {
     override fun onResume() {
         super.onResume()
         if (::binding.isInitialized) {
+            if (!viewModel.hasSession()) {
+                goToLogin()
+                return
+            }
             viewModel.onResume()
             updatePrompts.onHostResume()
             updatePrompts.checkOnLaunch()

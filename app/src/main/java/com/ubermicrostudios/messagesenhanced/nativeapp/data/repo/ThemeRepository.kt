@@ -70,6 +70,21 @@ class ThemeRepository @Inject constructor(
 
     @Volatile private var loaded = false
 
+    /** Drops in-memory chat themes so a later account does not paint the previous one. */
+    fun clear() {
+        synchronized(this) {
+            themes.clear()
+            wallpaperUrls.clear()
+            wallpaperCategories.clear()
+            loaded = false
+        }
+        _appColors.value = ThemeColors.Default
+        _paletteIds.value = emptyList()
+        _selectedPalette.value = ""
+        _appearance.value = AppSettingsSync.DARK
+        _revision.value = _revision.value + 1
+    }
+
     suspend fun refresh() {
         val response = api.themes()
         synchronized(this) {

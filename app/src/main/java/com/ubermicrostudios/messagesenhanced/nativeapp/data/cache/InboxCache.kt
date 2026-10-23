@@ -104,13 +104,18 @@ class InboxCache @Inject constructor(
         }
     }
 
-    fun saveConversations(list: List<ConversationDto>) {
+    /** Generation captured at the start of a fetch. Bumped by [clear]. */
+    fun generation(): Int = synchronized(fileLock) { epoch }
+
+    fun isCurrent(generation: Int): Boolean = synchronized(fileLock) {
+        CacheGeneration.canCommit(generation, epoch, writesOpen)
+    }
+
+    fun saveConversations(list: List<ConversationDto>, generation: Int) {
         if (!writesOpen) return
-        val gen: Int
         val server: String
         synchronized(fileLock) {
-            if (!writesOpen) return
-            gen = epoch
+            if (!CacheGeneration.canCommit(generation, epoch, writesOpen)) return
             server = currentServer()
             conversations = list
         }
@@ -120,11 +125,11 @@ class InboxCache @Inject constructor(
                 delay(DEBOUNCE_MS)
                 if (!writesOpen) return@launch
                 val latest = synchronized(fileLock) {
-                    if (gen != epoch || !writesOpen) return@launch
+                    if (!CacheGeneration.canCommit(generation, epoch, writesOpen)) return@launch
                     conversations
                 } ?: return@launch
                 synchronized(fileLock) {
-                    if (gen != epoch || !writesOpen) return@synchronized
+                    if (!CacheGeneration.canCommit(generation, epoch, writesOpen)) return@synchronized
                     writeAtomic(
                         conversationFile(),
                         json.encodeToString(ConversationCacheFile(server = server, conversations = latest)),
@@ -135,14 +140,12 @@ class InboxCache @Inject constructor(
     }
 
     /** Keeps the newest [MAX_MESSAGES] and remembers this chat as recently opened. */
-    fun saveMessages(conversationId: String, list: List<MessageDto>) {
+    fun saveMessages(conversationId: String, list: List<MessageDto>, generation: Int) {
         if (conversationId.isBlank() || !writesOpen) return
         val trimmed = list.filter { !it.messageId.startsWith("local-") }.takeLast(MAX_MESSAGES)
-        val gen: Int
         val server: String
         synchronized(fileLock) {
-            if (!writesOpen) return
-            gen = epoch
+            if (!CacheGeneration.canCommit(generation, epoch, writesOpen)) return
             server = currentServer()
             messages[conversationId] = trimmed
         }
@@ -152,11 +155,11 @@ class InboxCache @Inject constructor(
                 delay(DEBOUNCE_MS)
                 if (!writesOpen) return@launch
                 val latest = synchronized(fileLock) {
-                    if (gen != epoch || !writesOpen) return@launch
+                    if (!CacheGeneration.canCommit(generation, epoch, writesOpen)) return@launch
                     messages[conversationId].orEmpty()
                 }
                 synchronized(fileLock) {
-                    if (gen != epoch || !writesOpen) return@synchronized
+                    if (!CacheGeneration.canCommit(generation, epoch, writesOpen)) return@synchronized
                     writeThread(conversationId, latest, server)
                     updateRecentLocked(conversationId, server)
                 }
@@ -170,16 +173,18 @@ class InboxCache @Inject constructor(
         val server = currentServer()
         scope.launch {
             synchronized(fileLock) {
-                if (gen != epoch || !writesOpen) return@synchronized
+                if (!CacheGeneration.canCommit(gen, epoch, writesOpen)) return@synchronized
                 updateRecentLocked(conversationId, server)
             }
         }
     }
 
     /**
-     * Drops memory and disk. In-flight writes from the cleared generation do not land.
-     * Saves are ignored until [openWrites], so a refresh that finishes during logout
-     * cannot put the old inbox back.
+     * Drops memory immediately and deletes disk on [Dispatchers.IO]. In-flight
+     * writes from the cleared generation do not land. The directory is renamed
+     * away first so a later save cannot be wiped by the async delete.
+     * Saves are ignored until [openWrites], so a refresh that finishes during
+     * logout cannot put the old inbox back.
      */
     fun clear() {
         writesOpen = false
@@ -191,12 +196,16 @@ class InboxCache @Inject constructor(
             warmJob?.cancel()
             warmJob = null
         }
+        val doomed: File?
         synchronized(fileLock) {
             epoch++
             conversations = null
             messages.clear()
             warmDone = false
-            root.deleteRecursively()
+            doomed = retireRootLocked()
+        }
+        scope.launch {
+            runCatching { doomed?.deleteRecursively() }
         }
     }
 
@@ -208,11 +217,13 @@ class InboxCache @Inject constructor(
     private fun warmBody(gen: Int) {
         synchronized(fileLock) {
             if (gen != epoch) return
+            deleteWipingDirsLocked()
             if (conversations == null) conversations = readConversationFile()
             val ids = readRecentFile()
             for (id in ids) {
                 if (!messages.containsKey(id)) messages[id] = readThreadFile(id)
             }
+            dropUnkeptThreadFilesLocked(ids)
             if (gen != epoch) return
             warmDone = true
         }
@@ -226,16 +237,12 @@ class InboxCache @Inject constructor(
 
     private fun threadDir(): File = File(root, "threads")
 
-    private fun threadFile(id: String): File {
-        val hash = id.hashCode().toUInt().toString(16)
-        val safe = buildString {
-            for (ch in id) {
-                if (ch.isLetterOrDigit() || ch == '-' || ch == '_') append(ch)
-                if (length >= 40) break
-            }
-        }.ifBlank { "chat" }
-        return File(threadDir(), "$safe-$hash.json")
+    private fun threadFile(id: String): File? {
+        val name = ThreadCacheNames.fileName(id) ?: return null
+        return File(threadDir(), name)
     }
+
+    private fun legacyThreadFile(id: String): File = File(threadDir(), ThreadCacheNames.legacyFileName(id))
 
     private fun readConversationFile(): List<ConversationDto> {
         val text = readText(conversationFile())
@@ -257,19 +264,34 @@ class InboxCache @Inject constructor(
     }
 
     private fun readThreadFile(id: String): List<MessageDto> {
-        val text = readText(threadFile(id))
+        if (id.isBlank()) return emptyList()
+        val hashed = threadFile(id) ?: return emptyList()
+        var text = readText(hashed)
+        var fromLegacy = false
+        val legacy = legacyThreadFile(id)
+        if (text.isBlank() && legacy != hashed) {
+            text = readText(legacy)
+            fromLegacy = text.isNotBlank()
+        }
         if (text.isBlank()) return emptyList()
         val wrapped = runCatching { json.decodeFromString<ThreadCacheFile>(text) }.getOrNull() ?: return emptyList()
         if (!matchesServer(wrapped.server, currentServer())) return emptyList()
-        if (wrapped.conversationId.isBlank() || wrapped.conversationId == id) {
-            return wrapped.messages.takeLast(MAX_MESSAGES)
+        val list = if (wrapped.conversationId.isBlank() || wrapped.conversationId == id) {
+            wrapped.messages.takeLast(MAX_MESSAGES)
+        } else {
+            return emptyList()
         }
-        return emptyList()
+        if (fromLegacy) {
+            writeThread(id, list, wrapped.server.ifBlank { currentServer() })
+            deleteFileAndBackup(legacy)
+        }
+        return list
     }
 
     private fun writeThread(id: String, list: List<MessageDto>, server: String) {
+        val file = threadFile(id) ?: return
         writeAtomic(
-            threadFile(id),
+            file,
             json.encodeToString(
                 ThreadCacheFile(
                     server = server,
@@ -278,19 +300,50 @@ class InboxCache @Inject constructor(
                 ),
             ),
         )
+        val legacy = legacyThreadFile(id)
+        if (legacy != file) deleteFileAndBackup(legacy)
     }
 
     private fun updateRecentLocked(id: String, server: String) {
-        val next = (listOf(id) + readRecentFile().filter { it != id }).distinct().take(MAX_THREADS)
+        val next = (listOf(id) + readRecentFile().filter { it.isNotBlank() && it != id }).distinct().take(MAX_THREADS)
         writeAtomic(recentFile(), json.encodeToString(RecentCacheFile(server = server, ids = next)))
-        val keep = next.map { threadFile(it).name }.toSet()
+        dropUnkeptThreadFilesLocked(next)
+    }
+
+    private fun dropUnkeptThreadFilesLocked(ids: List<String>) {
+        val keep = ids.mapNotNull { threadFile(it)?.name }.toSet()
         threadDir().listFiles()?.forEach { file ->
             if (!file.isFile) return@forEach
             val name = file.name
             if (name.endsWith(".bak") || name.endsWith(".tmp")) return@forEach
-            if (name !in keep) {
-                file.delete()
-                File(file.parentFile, "$name.bak").delete()
+            if (name !in keep) deleteFileAndBackup(file)
+        }
+    }
+
+    private fun deleteFileAndBackup(file: File) {
+        file.delete()
+        File(file.parentFile, file.name + ".bak").delete()
+    }
+
+    /**
+     * Moves [root] aside so the async delete cannot wipe files written after
+     * [openWrites]. Leftover wiping directories are removed on the next warm.
+     */
+    private fun retireRootLocked(): File? {
+        if (!root.exists()) return null
+        val parent = root.parentFile ?: return null
+        val doomed = File(parent, "$WIPING_PREFIX$epoch-${System.nanoTime()}")
+        return if (root.renameTo(doomed)) doomed else {
+            val copy = File(parent, "$WIPING_PREFIX$epoch-fallback")
+            if (root.renameTo(copy)) copy else null
+        }
+    }
+
+    private fun deleteWipingDirsLocked() {
+        val parent = root.parentFile ?: return
+        parent.listFiles()?.forEach { file ->
+            if (file.isDirectory && file.name.startsWith(WIPING_PREFIX)) {
+                file.deleteRecursively()
             }
         }
     }
@@ -352,6 +405,7 @@ class InboxCache @Inject constructor(
         const val MAX_MESSAGES = 50
         const val MAX_THREADS = 10
         private const val DEBOUNCE_MS = 400L
+        private const val WIPING_PREFIX = "inbox_cache.wiping."
 
         /** A blank stamp is a cache written before server stamping and still belongs here. */
         fun matchesServer(stored: String, current: String): Boolean {

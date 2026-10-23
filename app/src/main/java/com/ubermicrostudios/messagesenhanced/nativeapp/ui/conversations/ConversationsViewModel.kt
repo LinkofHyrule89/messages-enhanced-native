@@ -386,6 +386,7 @@ class ConversationsViewModel @Inject constructor(
      */
     fun refresh(initial: Boolean = false, userInitiated: Boolean = false) {
         val gen = ++refreshGen
+        val cacheGen = inboxCache.generation()
         viewModelScope.launch {
             _state.update {
                 it.copy(
@@ -400,8 +401,12 @@ class ConversationsViewModel @Inject constructor(
                         _state.update { it.copy(refreshing = false) }
                         return@onSuccess
                     }
+                    if (!inboxCache.isCurrent(cacheGen)) {
+                        _state.update { it.copy(refreshing = false) }
+                        return@onSuccess
+                    }
                     serverListArrived = true
-                    inboxCache.saveConversations(list)
+                    inboxCache.saveConversations(list, cacheGen)
                     _state.update {
                         it.copy(conversations = list, loading = false, refreshing = false, error = null, ready = true)
                     }
