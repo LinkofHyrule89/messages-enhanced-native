@@ -39,7 +39,7 @@ sealed class UpdateResult {
 /** Install that is waiting for the unknown-sources setting to be turned on. */
 data class AwaitingInstall(
     val release: AppRelease,
-    val showDialog: Boolean,
+    val fromUser: Boolean,
 )
 
 /**
@@ -117,24 +117,33 @@ class UpdateChecker @Inject constructor(
     }
 
     /**
+     * Bumps the install token so [UpdateInstallReceiver] ignores a stale session.
+     * The download worker calls this; the screen that asked for the update does not
+     * stay alive for the download.
+     */
+    internal fun prepareInstallSession(): Int {
+        ensureSessionListener()
+        return synchronized(sessionLock) {
+            sessionFailed = false
+            sessionCommitted = false
+            latestProgress = null
+            UpdateEvents.currentToken += 1
+            UpdateEvents.currentToken
+        }
+    }
+
+    /**
      * Downloads [release] and commits a self-update. One install runs at a time.
-     * Progress is delivered on the main thread. The work survives the activity
-     * that started it; cancel it with [cancelInstall] before the session commits.
+     * The in-app Update button does not call this; it enqueues [UpdateDownloadInstallWorker],
+     * which calls [download] and [install] so the user can leave.
      */
     fun startInstall(release: AppRelease, showDialog: Boolean) {
         if (installInProgress()) {
             if (showDialog) progressDialogRequested = true
             return
         }
-        ensureSessionListener()
-        val token = synchronized(sessionLock) {
-            sessionFailed = false
-            sessionCommitted = false
-            latestProgress = null
-            progressDialogRequested = showDialog
-            UpdateEvents.currentToken += 1
-            UpdateEvents.currentToken
-        }
+        progressDialogRequested = showDialog
+        val token = prepareInstallSession()
         installJob = installScope.launch {
             try {
                 pendingOffer = null
@@ -256,6 +265,7 @@ class UpdateChecker @Inject constructor(
                 val callback = Intent(context, UpdateInstallReceiver::class.java).apply {
                     action = UpdateInstallReceiver.ACTION
                     putExtra(UpdateInstallReceiver.EXTRA_TOKEN, token)
+                    UpdateDownloadSpec.read(context)?.writeTo(this)
                 }
                 val flags = PendingIntentFlags.forInstall()
                 val pending = android.app.PendingIntent.getBroadcast(context, sessionId, callback, flags)

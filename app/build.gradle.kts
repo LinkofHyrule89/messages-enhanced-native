@@ -15,8 +15,8 @@ android {
         applicationId = "com.ubermicrostudios.messagesenhanced.nativeapp"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.6.2"
+        versionCode = 9
+        versionName = "0.6.3"
         buildConfigField("String", "GITHUB_OWNER", "\"LinkofHyrule89\"")
         buildConfigField("String", "GITHUB_REPO", "\"messages-enhanced-native\"")
     }
@@ -93,6 +93,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.material)
     implementation(libs.okhttp)
     implementation(libs.okhttp.sse)

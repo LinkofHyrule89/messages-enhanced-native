@@ -16,7 +16,9 @@ class UpdatePackageReplacedReceiver : BroadcastReceiver() {
         val triggered = AppPreferences.readRelaunchAfterUpdate(context)
         if (!UpdatePolicy.shouldRelaunch(intent?.action, triggered)) return
         AppPreferences.writeRelaunchAfterUpdate(context, false)
-        UpdateNotifier.cancel(context)
+        UpdateDownloadSpec.clear(context)
+        UpdateNotifier.dismissProgress(context)
+        UpdateNotifier.showInstalled(context)
         val launch = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return
         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         runCatching { context.startActivity(launch) }

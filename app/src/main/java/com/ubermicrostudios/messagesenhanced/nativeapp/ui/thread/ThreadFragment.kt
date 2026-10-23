@@ -284,6 +284,11 @@ class ThreadFragment : Fragment() {
         }
     }
 
+    override fun onPause() {
+        viewModel.onPause()
+        super.onPause()
+    }
+
     override fun onResume() {
         super.onResume()
         if (_binding != null) viewModel.onResume()

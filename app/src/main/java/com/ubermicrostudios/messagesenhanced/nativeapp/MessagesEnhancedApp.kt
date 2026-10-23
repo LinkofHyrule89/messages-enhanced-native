@@ -5,8 +5,9 @@ import coil.Coil
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import com.ubermicrostudios.messagesenhanced.nativeapp.push.MessagingService
-import com.ubermicrostudios.messagesenhanced.nativeapp.util.EmojiCatalog
 import com.ubermicrostudios.messagesenhanced.nativeapp.push.Push
+import com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateCheckWorker
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.EmojiCatalog
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -21,6 +22,7 @@ class MessagesEnhancedApp : Application(), ImageLoaderFactory {
         Coil.setImageLoader(imageLoader)
         runCatching { MessagingService.ensureChannels(this) }
         if (Push.loadConfig(this) != null) Push.initSaved(this)
+        UpdateCheckWorker.schedule(this)
     }
 
     override fun newImageLoader(): ImageLoader = imageLoader

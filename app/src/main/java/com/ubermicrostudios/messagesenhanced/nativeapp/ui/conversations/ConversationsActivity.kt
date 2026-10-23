@@ -151,7 +151,13 @@ class ConversationsActivity : SessionActivity() {
                 }
             }, 150)
         }
-        binding.refresh.setOnRefreshListener { viewModel.refresh() }
+        binding.refresh.setOnRefreshListener { viewModel.refresh(userInitiated = true) }
+        binding.refresh.setProgressBackgroundColorSchemeColor(
+            com.google.android.material.color.MaterialColors.getColor(binding.refresh, com.google.android.material.R.attr.colorSurfaceContainerHigh),
+        )
+        binding.refresh.setColorSchemeColors(
+            com.google.android.material.color.MaterialColors.getColor(binding.refresh, androidx.appcompat.R.attr.colorPrimary),
+        )
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (viewModel.state.value.search.open) {

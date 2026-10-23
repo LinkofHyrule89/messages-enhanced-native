@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.6.3
+
+- Background download and install. Tapping Update downloads the APK in the background with a progress notification (Downloading %), then installs it, so you can leave the app. On Android 12+ the install is silent when the system allows it; otherwise the usual install prompt is shown, with a notification that has an Install action.
+- The app checks for updates in the background every 12 hours. Auto-update downloads and installs. Otherwise it posts an Update available notification with an Update action, and tapping the notification opens the app.
+- A failed download or install posts a notification with a Retry action.
+- Fix: opening a conversation (including SMS) reliably marks it read; a background refresh could skip the read call. New incoming messages in an open, visible chat are marked read too.
+- Fix: the conversation list no longer flashes the pull-to-refresh spinner on every background poll; it only shows for a manual pull, and it uses Material You colors.
+
 ## v0.6.2
 
 - Tablet: the conversation list card rounds only its top-left corner.

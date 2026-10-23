@@ -181,6 +181,7 @@ class ThreadViewModel @Inject constructor(
             failures.success()
             messageLimit = 80
             jumpWindowLoaded = true
+            lastReadMarkedTs = 0L
         }
         applyAppearance(conversationId)
         refresh(markRead = true)
@@ -192,6 +193,7 @@ class ThreadViewModel @Inject constructor(
     }
 
     fun onResume() {
+        foreground = true
         sse.ensureStarted()
         failures.onForeground()
         _state.update { it.copy(error = null) }
@@ -207,6 +209,13 @@ class ThreadViewModel @Inject constructor(
         _state.update { it.copy(draft = value) }
     }
 
+    private var lastReadMarkedTs = 0L
+    private var foreground = false
+
+    fun onPause() {
+        foreground = false
+    }
+
     fun refresh(markRead: Boolean = false) {
         val id = _state.value.conversationId
         if (id.isBlank()) return
@@ -220,6 +229,16 @@ class ThreadViewModel @Inject constructor(
             runCatching { messagesRepo.messages(id, messageLimit) }
                 .onSuccess { list ->
                     failures.success()
+                    // Mark read even when this response is stale (a poll/event refresh can
+                    // overtake the open-time load); otherwise SMS threads stayed unread.
+                    // Also re-mark whenever a newer incoming message shows up while open.
+                    val newestIncoming = list.filter { !it.isFromMe }.maxOfOrNull { it.timestampMs } ?: 0L
+                    if (_state.value.conversationId == id &&
+                        (markRead || (foreground && newestIncoming > lastReadMarkedTs))
+                    ) {
+                        lastReadMarkedTs = maxOf(lastReadMarkedTs, newestIncoming)
+                        launch { messagesRepo.markRead(id); effect(ThreadEffect.ListChanged) }
+                    }
                     // Drop stale responses: a slower older request must not overwrite a newer one.
                     if (gen != refreshGen || _state.value.conversationId != id) return@onSuccess
                     val pending = _state.value.messages.filter { local ->
@@ -244,7 +263,6 @@ class ThreadViewModel @Inject constructor(
                     _state.update {
                         it.copy(messages = next, loading = false, error = null, loadedOnce = true)
                     }
-                    if (markRead) messagesRepo.markRead(id)
                 }
                 .onFailure { e ->
                     val banner = failures.failure(NetErrors.friendly(e))

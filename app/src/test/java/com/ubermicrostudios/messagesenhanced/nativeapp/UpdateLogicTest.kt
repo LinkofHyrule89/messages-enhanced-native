@@ -2,9 +2,12 @@ package com.ubermicrostudios.messagesenhanced.nativeapp
 
 import android.content.Intent
 import android.os.Build
+import androidx.work.Data
+import com.ubermicrostudios.messagesenhanced.nativeapp.update.AppRelease
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.ReleaseParser
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.SemVer
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateChecker
+import com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateDownloadSpec
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdatePolicy
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateProgress
 import org.junit.Assert.assertEquals
@@ -163,5 +166,50 @@ class UpdateLogicTest {
     fun autoUpdateSkipsTheOfferAndTheDefaultKeepsIt() {
         assertFalse(UpdatePolicy.installsWithoutOffer(autoUpdate = false))
         assertTrue(UpdatePolicy.installsWithoutOffer(autoUpdate = true))
+    }
+
+    @Test
+    fun backgroundCheckIsTwelveHoursAndNamesTheWorkers() {
+        assertEquals(12L, UpdatePolicy.BACKGROUND_CHECK_HOURS)
+        assertEquals("update_download_install", UpdatePolicy.DOWNLOAD_WORK_NAME)
+        assertEquals("update_check", UpdatePolicy.CHECK_WORK_NAME)
+        assertTrue(UpdatePolicy.DOWNLOAD_WORK_NAME != UpdatePolicy.CHECK_WORK_NAME)
+    }
+
+    @Test
+    fun sessionCallbackIsAcceptedForThisProcessOrAFreshOne() {
+        assertTrue(UpdatePolicy.acceptSessionCallback(currentToken = 0, callbackToken = 4))
+        assertTrue(UpdatePolicy.acceptSessionCallback(currentToken = 3, callbackToken = 3))
+        assertFalse(UpdatePolicy.acceptSessionCallback(currentToken = 3, callbackToken = 2))
+        assertFalse(UpdatePolicy.acceptSessionCallback(currentToken = 3, callbackToken = 0))
+    }
+
+    @Test
+    fun downloadSpecRoundTripsTheReleaseCoordinates() {
+        val release = AppRelease(
+            version = SemVer(0, 6, 3),
+            tag = "v0.6.3",
+            notes = "leave these behind",
+            apkName = "messages.apk",
+            downloadUrl = "https://example.test/messages.apk",
+            size = 4096L,
+            sha256 = "abc123",
+        )
+        val spec = UpdateDownloadSpec.from(release)
+        val restored = UpdateDownloadSpec.from(spec.toWorkData())?.toRelease()
+        assertEquals(SemVer(0, 6, 3), restored?.version)
+        assertEquals("v0.6.3", restored?.tag)
+        assertEquals("", restored?.notes)
+        assertEquals("messages.apk", restored?.apkName)
+        assertEquals("https://example.test/messages.apk", restored?.downloadUrl)
+        assertEquals(4096L, restored?.size)
+        assertEquals("abc123", restored?.sha256)
+
+        val noHash = UpdateDownloadSpec.from(spec.copy(sha256 = null).toWorkData())
+        assertNull(noHash?.sha256)
+        assertEquals(spec.copy(sha256 = null).downloadUrl, noHash?.downloadUrl)
+
+        assertNull(UpdateDownloadSpec("nope", "t", "a.apk", "https://e.test/a.apk", 1L, null).toRelease())
+        assertNull(UpdateDownloadSpec.from(Data.EMPTY))
     }
 }

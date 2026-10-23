@@ -82,6 +82,18 @@
 # PackageInstaller result receiver, and the relaunch after a self-update.
 -keep class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateInstallReceiver { *; }
 -keep class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdatePackageReplacedReceiver { *; }
+-keep class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateActionReceiver { *; }
+
+# WorkManager instantiates workers by the (Context, WorkerParameters) constructor.
+-keep class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateDownloadInstallWorker { *; }
+-keep class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateCheckWorker { *; }
+-keepclassmembers class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateDownloadInstallWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}
+-keepclassmembers class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateCheckWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}
+-keep class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateWorkerEntryPoint { *; }
 
 # Coroutines. ServiceLoader entry points and atomic updaters must keep their names.
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}

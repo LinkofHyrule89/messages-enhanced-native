@@ -47,6 +47,26 @@ object UpdatePolicy {
 
     /** Launch checks skip the offer dialog when auto-update is on. */
     fun installsWithoutOffer(autoUpdate: Boolean): Boolean = autoUpdate
+
+    /**
+     * WorkManager periodic check. Separate from [CHECK_INTERVAL_MS], which only
+     * throttles checks started while the app is open.
+     */
+    const val BACKGROUND_CHECK_HOURS = 12L
+
+    const val DOWNLOAD_WORK_NAME = "update_download_install"
+
+    const val CHECK_WORK_NAME = "update_check"
+
+    /**
+     * A session callback is accepted when it belongs to the session this process
+     * started. A fresh process (token still 0) accepts the callback, because the
+     * process that committed the session may already be gone.
+     */
+    fun acceptSessionCallback(currentToken: Int, callbackToken: Int): Boolean {
+        if (currentToken == 0) return true
+        return callbackToken == currentToken
+    }
 }
 
 sealed class UpdateProgress {

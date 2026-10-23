@@ -271,19 +271,26 @@ class ConversationsViewModel @Inject constructor(
         _state.update { it.copy(notice = null) }
     }
 
-    fun refresh(initial: Boolean = false) {
+    /**
+     * Background refreshes (polling, events, list-changed) never show a spinner;
+     * only first load ([initial]) and a user pull ([userInitiated]) do.
+     */
+    fun refresh(initial: Boolean = false, userInitiated: Boolean = false) {
         val gen = ++refreshGen
         viewModelScope.launch {
             _state.update {
                 it.copy(
                     loading = initial && it.conversations.isEmpty(),
-                    refreshing = !initial || it.conversations.isNotEmpty(),
+                    refreshing = userInitiated,
                 )
             }
             runCatching { messages.conversations() }
                 .onSuccess { list ->
                     failures.success()
-                    if (gen != refreshGen) return@onSuccess
+                    if (gen != refreshGen) {
+                        _state.update { it.copy(refreshing = false) }
+                        return@onSuccess
+                    }
                     _state.update {
                         it.copy(conversations = list, loading = false, refreshing = false, error = null)
                     }
