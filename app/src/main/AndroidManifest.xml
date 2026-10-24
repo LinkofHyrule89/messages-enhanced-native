@@ -72,6 +72,7 @@
             android:name=".ui.thread.ThreadActivity"
             android:exported="false"
             android:parentActivityName=".ui.conversations.ConversationsActivity"
+            android:theme="@style/Theme.MessagesEnhancedNative.Splash"
             android:windowSoftInputMode="adjustResize" />
 
         <activity

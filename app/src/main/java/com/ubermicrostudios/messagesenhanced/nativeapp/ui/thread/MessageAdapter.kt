@@ -21,7 +21,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.view.isVisible
-import coil.transform.CircleCropTransformation
+import com.google.android.material.imageview.ShapeableImageView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
@@ -37,6 +37,9 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemMessageTh
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.conversations.icon
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.conversations.tint
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.BubbleColors
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.CircleAvatars
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.RecyclerIds
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.circleAvatar
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.stableCacheKey
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ConversationEncryption
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Encryption
@@ -76,6 +79,10 @@ class MessageAdapter(
             notifyDataSetChanged()
         }
 
+    init {
+        setHasStableIds(true)
+    }
+
     fun setMarks(starred: Set<String>, selected: Set<String>, selecting: Boolean) {
         if (starred == starredIds && selected == selectedIds && selecting == this.selecting) return
         starredIds = starred
@@ -90,6 +97,9 @@ class MessageAdapter(
 
         override fun areContentsTheSame(a: MessageRuns.Row, b: MessageRuns.Row) = a == b
     }
+
+    override fun getItemId(position: Int): Long =
+        RecyclerIds.of(1, getItem(position).message.messageId)
 
     override fun getItemViewType(position: Int): Int =
         if (getItem(position).message.isFromMe) TYPE_ME else TYPE_THEM
@@ -552,16 +562,16 @@ class MessageAdapter(
         chip.addView(initials)
         val url = person?.let { Participants.personAvatarUrl(origin(), it) }
         if (!url.isNullOrBlank()) {
-            val photo = ImageView(parent.context).apply {
+            val photo = ShapeableImageView(parent.context).apply {
                 layoutParams = FrameLayout.LayoutParams(inner, inner).apply {
                     gravity = Gravity.CENTER
                 }
                 scaleType = ImageView.ScaleType.CENTER_CROP
             }
+            CircleAvatars.clip(photo)
             chip.addView(photo)
             photo.load(url) {
-                transformations(CircleCropTransformation())
-                stableCacheKey(url)
+                circleAvatar(url)
                 listener(onError = { _, _ -> photo.isVisible = false })
             }
         }

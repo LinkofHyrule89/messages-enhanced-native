@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.6.8
+
+- Conversation photos are round again in the list, the chat header, group collages, read-by chips, photo-viewer replies, the share picker, group details, and notification icons.
+- Coming back to the app, or after Android stops it, shows your chats right away from this phone. The list and the open conversation stay put while they refresh in the background.
+- After an update, the first open shows what changed in that version.
+
 ## v0.6.7
 
 - Changing the server address forgets the previous server's sign-in cookie, so this app does not stay signed in under the old account.

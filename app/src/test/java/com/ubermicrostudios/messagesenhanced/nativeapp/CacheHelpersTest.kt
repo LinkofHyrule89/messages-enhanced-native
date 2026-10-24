@@ -3,6 +3,7 @@ package com.ubermicrostudios.messagesenhanced.nativeapp
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.cache.CacheGeneration
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.cache.ThreadCacheNames
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.PersistentCookieJar
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.RecyclerIds
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.StableHashIds
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.StableIdMap
 import org.junit.Assert.assertEquals
@@ -121,5 +122,15 @@ class CacheHelpersTest {
         assertNull(PersistentCookieJar.parseServerUrl("   "))
         assertNotNull(PersistentCookieJar.parseServerUrl("http://10.0.0.5:8080"))
         assertEquals(8080, PersistentCookieJar.parseServerUrl("http://10.0.0.5:8080")?.port)
+    }
+
+    @Test
+    fun recyclerIdsStayStableAndAvoidNoId() {
+        val a = RecyclerIds.of(2, "sms:+18015551234")
+        assertEquals(a, RecyclerIds.of(2, "sms:+18015551234"))
+        assertNotEquals(a, RecyclerIds.of(1, "sms:+18015551234"))
+        assertNotEquals(a, RecyclerIds.of(2, "sms:+18015550000"))
+        assertNotEquals(-1L, a)
+        assertNotEquals(-1L, RecyclerIds.of(0, ""))
     }
 }

@@ -8,8 +8,9 @@ import android.widget.TextView
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
-import coil.transform.CircleCropTransformation
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ContactDto
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.CircleAvatars
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.circleAvatar
 import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemContactBinding
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Formatters
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.NewChat
@@ -101,13 +102,14 @@ class ContactAdapter(
                     phone = it.phone,
                 )
             }
+            CircleAvatars.clip(binding.avatarPhoto)
             if (url.isNullOrBlank()) {
                 binding.avatarPhoto.isVisible = false
                 binding.avatarPhoto.setImageDrawable(null)
             } else {
                 binding.avatarPhoto.isVisible = true
                 binding.avatarPhoto.load(url) {
-                    transformations(CircleCropTransformation())
+                    circleAvatar(url)
                     listener(onError = { _, _ -> binding.avatarPhoto.isVisible = false })
                 }
             }

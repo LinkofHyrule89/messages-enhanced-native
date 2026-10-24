@@ -1,6 +1,7 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread
 
 import android.os.Bundle
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.ubermicrostudios.messagesenhanced.nativeapp.R
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.Insets
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.SessionActivity
@@ -8,8 +9,13 @@ import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class ThreadActivity : SessionActivity() {
+    @Volatile
+    private var threadReady = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
+        splash.setKeepOnScreenCondition { !threadReady }
         Insets.enable(this)
         setContentView(R.layout.activity_thread)
         observeAuthLoss()
@@ -21,5 +27,9 @@ class ThreadActivity : SessionActivity() {
                 )
                 .commit()
         }
+    }
+
+    fun onThreadReady() {
+        threadReady = true
     }
 }

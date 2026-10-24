@@ -24,7 +24,8 @@ import coil.imageLoader
 import coil.load
 import coil.request.Disposable
 import coil.request.ImageRequest
-import coil.transform.CircleCropTransformation
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.CircleAvatars
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.circleAvatar
 import com.google.android.material.color.MaterialColors
 import com.ubermicrostudios.messagesenhanced.nativeapp.R
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ContactDto
@@ -355,6 +356,7 @@ object ForwardPicker {
                     shape = GradientDrawable.OVAL
                     setColor(color)
                 }
+                CircleAvatars.clip(binding.avatarPhoto)
                 binding.avatarPhoto.setImageDrawable(null)
                 binding.avatarPhoto.isVisible = false
                 contactRequest?.dispose()
@@ -373,8 +375,7 @@ object ForwardPicker {
                 val request = ImageRequest.Builder(binding.avatarPhoto.context)
                     .data(url)
                     .target(binding.avatarPhoto)
-                    .transformations(CircleCropTransformation())
-                    .stableCacheKey(url)
+                    .circleAvatar(url)
                     .listener(
                         onSuccess = { _, _ ->
                             if (binding.avatarPhoto.getTag(R.id.avatar_photo) == token) {

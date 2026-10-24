@@ -89,6 +89,15 @@ class AppPreferences @Inject constructor(
         get() = readRelaunchAfterUpdate(appContext)
         set(value) = writeRelaunchAfterUpdate(appContext, value)
 
+    fun lastWhatsNewVersionCode(): Int? {
+        if (!settings.contains(KEY_WHATS_NEW_CODE)) return null
+        return settings.getInt(KEY_WHATS_NEW_CODE, 0)
+    }
+
+    fun markWhatsNewShown(code: Int) {
+        settings.edit { putInt(KEY_WHATS_NEW_CODE, code) }
+    }
+
     var notificationsEnabled: Boolean
         get() = settings.getBoolean(KEY_NOTIFICATIONS, false)
         set(value) = settings.edit { putBoolean(KEY_NOTIFICATIONS, value) }
@@ -173,6 +182,7 @@ class AppPreferences @Inject constructor(
         internal const val KEY_AUTO_UPDATE = "auto_update"
         internal const val KEY_RELAUNCH_AFTER_UPDATE = "relaunch_after_update"
         private const val KEY_LAST_CONVERSATION = "last_selected_conversation_id"
+        private const val KEY_WHATS_NEW_CODE = "whats_new_version_code"
 
         fun readRelaunchAfterUpdate(context: Context): Boolean {
             return context.applicationContext

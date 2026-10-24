@@ -65,6 +65,9 @@ class InboxCache @Inject constructor(
         }
     }
 
+    /** True after the first disk warm has finished (or been cancelled by [clear]). */
+    fun isWarm(): Boolean = warmDone
+
     /** Null until the conversation file has been read or a save has landed in memory. */
     fun peekConversations(): List<ConversationDto>? = conversations
 

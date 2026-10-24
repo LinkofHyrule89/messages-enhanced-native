@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="@drawable/bg_details_sheet"
@@ -60,15 +61,16 @@
                 android:textSize="18sp"
                 android:textStyle="bold" />
 
-            <ImageView
+            <com.google.android.material.imageview.ShapeableImageView
                 android:id="@+id/details_avatar_photo"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:contentDescription="@null"
                 android:scaleType="centerCrop"
-                android:visibility="gone" />
+                android:visibility="gone"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.MessagesEnhanced.Circle" />
 
-            <ImageView
+            <com.google.android.material.imageview.ShapeableImageView
                 android:id="@+id/details_avatar_duo_a"
                 android:layout_width="36dp"
                 android:layout_height="36dp"
@@ -77,9 +79,10 @@
                 android:contentDescription="@null"
                 android:padding="2dp"
                 android:scaleType="centerCrop"
-                android:visibility="gone" />
+                android:visibility="gone"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.MessagesEnhanced.Circle" />
 
-            <ImageView
+            <com.google.android.material.imageview.ShapeableImageView
                 android:id="@+id/details_avatar_duo_b"
                 android:layout_width="36dp"
                 android:layout_height="36dp"
@@ -88,7 +91,8 @@
                 android:contentDescription="@null"
                 android:padding="2dp"
                 android:scaleType="centerCrop"
-                android:visibility="gone" />
+                android:visibility="gone"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.MessagesEnhanced.Circle" />
         </FrameLayout>
 
         <LinearLayout

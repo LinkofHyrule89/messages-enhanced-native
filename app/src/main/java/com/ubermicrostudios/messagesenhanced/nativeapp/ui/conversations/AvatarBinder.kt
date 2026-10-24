@@ -9,14 +9,14 @@ import androidx.core.view.isVisible
 import coil.imageLoader
 import coil.request.Disposable
 import coil.request.ImageRequest
-import coil.transform.CircleCropTransformation
 import com.ubermicrostudios.messagesenhanced.nativeapp.R
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemConversationBinding
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.AvatarRequest
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.CircleAvatars
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Formatters
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
-import com.ubermicrostudios.messagesenhanced.nativeapp.util.stableCacheKey
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.circleAvatar
 
 /** The views [AvatarBinder] fills. The list row and the thread header share one implementation. */
 class AvatarTarget(
@@ -41,6 +41,9 @@ object AvatarBinder {
     }
 
     fun bind(target: AvatarTarget, origin: String, conversation: ConversationDto) {
+        CircleAvatars.clip(target.photo)
+        CircleAvatars.clip(target.duoA)
+        CircleAvatars.clip(target.duoB)
         val name = Participants.displayName(conversation)
         val color = Participants.avatarColor(conversation.conversationId.ifBlank { name })
         val initials = Formatters.initials(name)
@@ -136,8 +139,7 @@ object AvatarBinder {
         val request = ImageRequest.Builder(context)
             .data(url)
             .target(this)
-            .transformations(CircleCropTransformation())
-            .stableCacheKey(url)
+            .circleAvatar(url)
             .listener(
                 onError = { _, _ -> if (alive(target, token)) onError?.invoke() },
             )
@@ -153,7 +155,7 @@ object AvatarBinder {
     ) {
         val request = ImageRequest.Builder(target.box.context)
             .data(url)
-            .stableCacheKey(url)
+            .circleAvatar(url)
             .listener(
                 onSuccess = { _, _ -> if (alive(target, token)) onResult(true) },
                 onError = { _, _ -> if (alive(target, token)) onResult(false) },

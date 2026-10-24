@@ -2,8 +2,10 @@ package com.ubermicrostudios.messagesenhanced.nativeapp.util
 
 import android.net.Uri
 import coil.key.Keyer
+import coil.memory.MemoryCache
 import coil.request.ImageRequest
 import coil.request.Options
+import coil.transform.CircleCropTransformation
 import java.net.URI
 import java.net.URLDecoder
 
@@ -11,8 +13,17 @@ import java.net.URLDecoder
  * Stable Coil keys for authenticated media.
  * `/api/avatar` is identified by its query, so only auth-token parameters are removed.
  * A rotating `token` must not miss the disk cache, and two people must not share one entry.
+ *
+ * Memory keys for transformed requests must include the transformation. Coil uses an
+ * explicit [ImageRequest.memoryCacheKey] as-is, so overriding it with the URL alone
+ * made circle-cropped avatars reuse uncropped bitmaps from a probe load.
  */
 object ImageCacheKeys {
+    /** Coil's extra name for the first transformation, from MemoryCacheService. */
+    const val TRANSFORMATION_EXTRA_0 = "coil#transformation_0"
+
+    val circleCropCacheKey: String = CircleCropTransformation().cacheKey
+
     private val AUTH_PARAMS = setOf(
         "token",
         "access_token",
@@ -49,6 +60,15 @@ object ImageCacheKeys {
         return if (kept.isEmpty()) root else "$root?$kept"
     }
 
+    fun diskKey(url: String): String = of(url) ?: url
+
+    /**
+     * Memory cache key for a circle-cropped avatar. The extra matches Coil's
+     * `coil#transformation_0` so an uncropped decode of the same URL cannot be reused.
+     */
+    fun circleMemoryKey(url: String): MemoryCache.Key =
+        MemoryCache.Key(diskKey(url), mapOf(TRANSFORMATION_EXTRA_0 to circleCropCacheKey))
+
     private fun stableQuery(raw: String?): String {
         if (raw.isNullOrBlank()) return ""
         return raw.split('&')
@@ -64,8 +84,19 @@ object ImageCacheKeys {
 
 fun ImageRequest.Builder.stableCacheKey(data: Any?): ImageRequest.Builder {
     val key = (data as? String)?.let(ImageCacheKeys::of) ?: return this
-    memoryCacheKey(key)
+    // Disk only. Overriding memoryCacheKey drops Coil's transformation extras.
     diskCacheKey(key)
+    return this
+}
+
+/** Circle-cropped avatar: stable disk key, memory key that includes the crop, no crossfade. */
+fun ImageRequest.Builder.circleAvatar(url: String): ImageRequest.Builder {
+    val memory = ImageCacheKeys.circleMemoryKey(url)
+    diskCacheKey(ImageCacheKeys.diskKey(url))
+    memoryCacheKey(memory)
+    placeholderMemoryCacheKey(memory)
+    transformations(CircleCropTransformation())
+    crossfade(false)
     return this
 }
 

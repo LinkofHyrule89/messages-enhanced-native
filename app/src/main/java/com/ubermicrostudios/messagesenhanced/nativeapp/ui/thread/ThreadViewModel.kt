@@ -1,5 +1,6 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread
 
+import android.os.Parcelable
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -96,7 +97,7 @@ class ThreadViewModel @Inject constructor(
     private val conversationNotifications: ConversationNotifications,
     private val inboxCache: InboxCache,
     private val prefs: AppPreferences,
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     private val initialId: String = savedStateHandle[ARG_ID] ?: ""
@@ -222,7 +223,6 @@ class ThreadViewModel @Inject constructor(
         foreground = true
         sse.ensureStarted()
         failures.onForeground()
-        _state.update { it.copy(error = null) }
         val id = _state.value.conversationId
         if (id.isNotBlank()) {
             refresh(markRead = false)
@@ -230,6 +230,12 @@ class ThreadViewModel @Inject constructor(
             loadStars(id)
         }
     }
+
+    fun saveMessageScroll(state: Parcelable?) {
+        savedStateHandle[KEY_SCROLL] = state
+    }
+
+    fun messageScroll(): Parcelable? = savedStateHandle[KEY_SCROLL]
 
     fun onDraft(value: String) {
         _state.update { it.copy(draft = value) }
@@ -257,8 +263,8 @@ class ThreadViewModel @Inject constructor(
                 }
             }
             if (gen != refreshGen || _state.value.conversationId != id) return@launch
-            // Spinner only when this chat has nothing cached. Cached rows stay up
-            // through the background refresh.
+            // Spinner only when this chat has nothing on screen and nothing cached.
+            // Warm resume keeps the current rows; the network refresh stays silent.
             _state.update { it.copy(loading = it.messages.isEmpty(), ready = true) }
             if (_state.value.messages.isNotEmpty()) yield()
             if (gen != refreshGen || _state.value.conversationId != id) return@launch
@@ -944,5 +950,6 @@ class ThreadViewModel @Inject constructor(
         const val ARG_NOTIFICATION = "conversation_notification"
         const val ARG_JUMP_ID = "jump_message_id"
         const val ARG_JUMP_TS = "jump_message_ts"
+        private const val KEY_SCROLL = "message_list_scroll"
     }
 }

@@ -15,6 +15,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemConversat
 import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemSearchHitBinding
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.InboxSearch
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.RecyclerIds
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
 
 sealed class SearchRow {
@@ -27,6 +28,10 @@ class SearchAdapter(
     private val onConversation: (ConversationDto) -> Unit,
     private val onMessage: (InboxSearch.MessageHit) -> Unit,
 ) : ListAdapter<SearchRow, RecyclerView.ViewHolder>(Diff) {
+
+    init {
+        setHasStableIds(true)
+    }
 
     var query: String = ""
 
@@ -41,6 +46,12 @@ class SearchAdapter(
             search.messages.forEach { out.add(SearchRow.Message(it)) }
         }
         return out
+    }
+
+    override fun getItemId(position: Int): Long = when (val row = getItem(position)) {
+        is SearchRow.Header -> RecyclerIds.of(1, row.title)
+        is SearchRow.Conversation -> RecyclerIds.of(2, row.conversation.conversationId)
+        is SearchRow.Message -> RecyclerIds.of(3, row.hit.message.messageId)
     }
 
     override fun getItemViewType(position: Int): Int = when (getItem(position)) {

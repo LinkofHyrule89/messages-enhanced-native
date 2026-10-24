@@ -55,14 +55,15 @@
                 android:textSize="16sp"
                 android:textStyle="bold" />
 
-            <ImageView
+            <com.google.android.material.imageview.ShapeableImageView
                 android:id="@+id/profile_photo"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:contentDescription="@null"
                 android:importantForAccessibility="no"
                 android:scaleType="centerCrop"
-                android:visibility="gone" />
+                android:visibility="gone"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.MessagesEnhanced.Circle" />
         </FrameLayout>
     </LinearLayout>
 

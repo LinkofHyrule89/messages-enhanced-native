@@ -122,6 +122,7 @@ class ThreadFragment : Fragment() {
     private var messageSignature = ""
     private var shownReplyId: String? = null
     private var stickToBottom = false
+    private var messageScrollRestored = false
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentThreadBinding.inflate(inflater, container, false)
@@ -255,6 +256,11 @@ class ThreadFragment : Fragment() {
         binding.messages.adapter = adapter
         binding.messages.clipToPadding = false
         binding.messages.clipChildren = false
+        val initial = viewModel.state.value
+        adapter.submitList(MessageRuns.rows(initial.messages, initial.isGroup)) {
+            restoreMessageScroll(initial)
+        }
+        if (initial.ready) (activity as? ThreadActivity)?.onThreadReady()
         binding.replyBarIcon.imageTintList = ColorStateList.valueOf(requireContext().getColor(R.color.accent))
         binding.replyCancel.imageTintList = muted
         binding.replyCancel.setOnClickListener { viewModel.clearReply() }
@@ -303,6 +309,9 @@ class ThreadFragment : Fragment() {
     }
 
     override fun onPause() {
+        if (_binding != null) {
+            viewModel.saveMessageScroll(binding.messages.layoutManager?.onSaveInstanceState())
+        }
         viewModel.onPause()
         super.onPause()
     }
@@ -331,8 +340,8 @@ class ThreadFragment : Fragment() {
                 } else if (state.loadedOnce && !state.loading) {
                     viewModel.consumeJump(found = false)
                 }
-            } else if (jump && rows.isNotEmpty()) {
-                binding.messages.scrollToPosition(rows.lastIndex)
+            } else {
+                restoreMessageScroll(state, jump, rows.isNotEmpty())
             }
         }
         for (message in state.messages) {
@@ -340,7 +349,8 @@ class ThreadFragment : Fragment() {
             previews.request(url)
         }
         binding.empty.isVisible = state.ready && !state.loading && state.messages.isEmpty()
-        binding.progress.isVisible = state.loading
+        binding.progress.isVisible = state.loading && state.messages.isEmpty()
+        if (state.ready) (activity as? ThreadActivity)?.onThreadReady()
         val serverError = !state.error.isNullOrBlank()
         binding.error.isVisible = serverError
         binding.error.text = state.error.orEmpty()
@@ -696,6 +706,28 @@ class ThreadFragment : Fragment() {
         val clipboard = requireContext().getSystemService(ClipboardManager::class.java) ?: return
         clipboard.setPrimaryClip(ClipData.newPlainText("message", text))
         Toast.makeText(requireContext(), "Copied", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun restoreMessageScroll(
+        state: ThreadUiState,
+        contentsChanged: Boolean = false,
+        hasRows: Boolean = adapter.itemCount > 0,
+    ) {
+        if (_binding == null) return
+        if (!messageScrollRestored) {
+            val saved = viewModel.messageScroll()
+            if (saved != null && hasRows) {
+                binding.messages.layoutManager?.onRestoreInstanceState(saved)
+                messageScrollRestored = true
+                return
+            }
+            if (hasRows || state.ready) messageScrollRestored = true
+            if (hasRows) binding.messages.scrollToPosition(adapter.itemCount - 1)
+            return
+        }
+        if (contentsChanged && hasRows && (stickToBottom || isNearBottom())) {
+            binding.messages.scrollToPosition(adapter.itemCount - 1)
+        }
     }
 
     private fun headerTarget() = AvatarTarget(

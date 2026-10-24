@@ -19,6 +19,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemConversat
 import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemConversationHeaderBinding
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ConvListRow
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Encryption
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.RecyclerIds
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Formatters
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.MessageStatus
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
@@ -31,6 +32,10 @@ class ConversationAdapter(
     private val onClick: (ConversationDto) -> Unit,
     private val onMenu: (ConversationDto, View) -> Unit,
 ) : ListAdapter<ConvListRow, RecyclerView.ViewHolder>(Diff) {
+
+    init {
+        setHasStableIds(true)
+    }
 
     var selectedId: String? = null
         set(value) {
@@ -65,6 +70,11 @@ class ConversationAdapter(
         }
 
         override fun areContentsTheSame(a: ConvListRow, b: ConvListRow) = a == b
+    }
+
+    override fun getItemId(position: Int): Long = when (val row = getItem(position)) {
+        is ConvListRow.Header -> RecyclerIds.of(1, row.title)
+        is ConvListRow.Item -> RecyclerIds.of(2, row.conversation.conversationId)
     }
 
     override fun getItemViewType(position: Int): Int = when (getItem(position)) {

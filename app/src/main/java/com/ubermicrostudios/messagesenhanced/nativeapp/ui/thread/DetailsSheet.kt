@@ -9,7 +9,8 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.view.isVisible
 import coil.load
-import coil.transform.CircleCropTransformation
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.CircleAvatars
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.circleAvatar
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ParticipantDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.DialogGroupDetailsBinding
@@ -101,6 +102,7 @@ object DetailsSheet {
         val profileUrl = if (person.me) ConversationsViewModel.publishedProfilePhotoUrl else null
         val fallback = Participants.personAvatarUrl(origin, person)
         val url = profileUrl?.takeIf { it.isNotBlank() } ?: fallback
+        CircleAvatars.clip(row.avatarPhoto)
         if (url.isNullOrBlank()) {
             row.avatarPhoto.isVisible = false
             row.avatarPhoto.setImageDrawable(null)
@@ -108,7 +110,7 @@ object DetailsSheet {
         }
         row.avatarPhoto.isVisible = true
         row.avatarPhoto.load(url) {
-            transformations(CircleCropTransformation())
+            circleAvatar(url)
             listener(
                 onError = { _, _ ->
                     val next = fallback?.takeIf { it.isNotBlank() && it != url }
@@ -116,7 +118,7 @@ object DetailsSheet {
                         row.avatarPhoto.isVisible = false
                     } else {
                         row.avatarPhoto.load(next) {
-                            transformations(CircleCropTransformation())
+                            circleAvatar(next)
                             listener(onError = { _, _ -> row.avatarPhoto.isVisible = false })
                         }
                     }

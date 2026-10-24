@@ -8,15 +8,15 @@ import androidx.recyclerview.widget.RecyclerView
 import coil.imageLoader
 import coil.request.Disposable
 import coil.request.ImageRequest
-import coil.transform.CircleCropTransformation
 import com.ubermicrostudios.messagesenhanced.nativeapp.R
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.CircleAvatars
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.circleAvatar
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.MessageDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ParticipantDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ItemViewerReplyBinding
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Formatters
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ViewerReplies
-import com.ubermicrostudios.messagesenhanced.nativeapp.util.stableCacheKey
 
 class ViewerReplyAdapter : RecyclerView.Adapter<ViewerReplyAdapter.Row>() {
     private var items: List<MessageDto> = emptyList()
@@ -58,6 +58,7 @@ class ViewerReplyAdapter : RecyclerView.Adapter<ViewerReplyAdapter.Row>() {
         holder.request?.dispose()
         holder.request = null
         val photo = binding.replyAvatarPhoto
+        CircleAvatars.clip(photo)
         photo.setImageDrawable(null)
         photo.isVisible = false
         val person = ViewerReplies.senderParticipant(people, message)
@@ -71,8 +72,7 @@ class ViewerReplyAdapter : RecyclerView.Adapter<ViewerReplyAdapter.Row>() {
         val request = ImageRequest.Builder(photo.context)
             .data(url)
             .target(photo)
-            .transformations(CircleCropTransformation())
-            .stableCacheKey(url)
+            .circleAvatar(url)
             .listener(
                 onSuccess = { _, _ ->
                     if (photo.getTag(R.id.reply_avatar_photo) == token) photo.isVisible = true

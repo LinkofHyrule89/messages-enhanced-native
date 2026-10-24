@@ -1,3 +1,11 @@
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
 import java.util.Properties
 
 plugins {
@@ -5,6 +13,22 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
+}
+
+abstract class CopyChangelogTask : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val changelog: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun copyFile() {
+        val dest = outputDirectory.get().asFile
+        dest.mkdirs()
+        changelog.get().asFile.copyTo(dest.resolve("CHANGELOG.md"), overwrite = true)
+    }
 }
 
 android {
@@ -15,8 +39,8 @@ android {
         applicationId = "com.ubermicrostudios.messagesenhanced.nativeapp"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.6.7"
+        versionCode = 14
+        versionName = "0.6.8"
         buildConfigField("String", "GITHUB_OWNER", "\"LinkofHyrule89\"")
         buildConfigField("String", "GITHUB_REPO", "\"messages-enhanced-native\"")
     }
@@ -76,6 +100,18 @@ android {
                 "META-INF/*.RSA",
             )
         }
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        val copyTask = tasks.register<CopyChangelogTask>(
+            "copyChangelog${variant.name.replaceFirstChar { it.uppercase() }}",
+        ) {
+            changelog.set(rootProject.file("CHANGELOG.md"))
+            outputDirectory.set(layout.buildDirectory.dir("generated/${variant.name}/changelogAssets"))
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(copyTask, CopyChangelogTask::outputDirectory)
     }
 }
 

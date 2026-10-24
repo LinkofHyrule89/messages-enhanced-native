@@ -15,7 +15,8 @@ import androidx.core.graphics.drawable.toBitmap
 import coil.ImageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
-import coil.transform.CircleCropTransformation
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.CircleBitmaps
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.circleAvatar
 import com.ubermicrostudios.messagesenhanced.nativeapp.R
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.BaseUrlProvider
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.AppPreferences
@@ -203,7 +204,9 @@ class ConversationNotifications @Inject constructor(
             .addAction(replyAction(thread))
             .addAction(markReadAction(thread.conversationId))
         if (silent) builder.setSilent(true)
-        largeIcon(thread, icons)?.let { builder.setLargeIcon(it) }
+        largeIcon(thread, icons)?.let { icon ->
+            builder.setLargeIcon(icon.toIcon(context))
+        }
         val posted = builder.build()
         val id = MessageNotificationIds.notificationId(thread.conversationId)
         try {
@@ -260,10 +263,14 @@ class ConversationNotifications @Inject constructor(
         return builder.build()
     }
 
-    private fun largeIcon(thread: NotifThread, icons: Map<String, Bitmap>): Bitmap? {
-        if (thread.isGroup) icons[thread.groupAvatarUrl]?.let { return it }
-        val url = thread.lines.lastOrNull { !it.fromMe && it.avatarUrl.isNotBlank() }?.avatarUrl
-        return url?.let { icons[it] }
+    private fun largeIcon(thread: NotifThread, icons: Map<String, Bitmap>): IconCompat? {
+        val bitmap = if (thread.isGroup) {
+            icons[thread.groupAvatarUrl]
+        } else {
+            val url = thread.lines.lastOrNull { !it.fromMe && it.avatarUrl.isNotBlank() }?.avatarUrl
+            url?.let { icons[it] }
+        }
+        return bitmap?.let { IconCompat.createWithBitmap(it) }
     }
 
     private fun replyAction(thread: NotifThread): NotificationCompat.Action {
@@ -389,14 +396,14 @@ class ConversationNotifications @Inject constructor(
             .data(url)
             .size(ICON_PX)
             .allowHardware(false)
-            .crossfade(false)
-            .transformations(CircleCropTransformation())
+            .circleAvatar(url)
             .build()
         val result = runCatching { imageLoader.execute(request) }.getOrNull() as? SuccessResult ?: return null
         val bitmap = runCatching { result.drawable.toBitmap(ICON_PX, ICON_PX) }.getOrNull() ?: return null
+        val circular = CircleBitmaps.of(bitmap)
         if (iconCache.size > ICON_CACHE) iconCache.clear()
-        iconCache[url] = bitmap
-        return bitmap
+        iconCache[url] = circular
+        return circular
     }
 
     private fun mutableFlags(): Int {

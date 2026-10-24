@@ -1,5 +1,7 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.ui.conversations
 
+import android.os.Parcelable
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.cache.InboxCache
@@ -78,6 +80,7 @@ class ConversationsViewModel @Inject constructor(
     private val health: HealthRepository,
     private val inboxCache: InboxCache,
     private val prefs: AppPreferences,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     private val cachedConversations = inboxCache.peekConversations()
@@ -149,10 +152,15 @@ class ConversationsViewModel @Inject constructor(
             health.refresh()
         }
         failures.onForeground()
-        _state.update { it.copy(error = null) }
         refreshProfile(force = false)
         refresh()
     }
+
+    fun saveListScroll(state: Parcelable?) {
+        savedStateHandle[KEY_LIST_SCROLL] = state
+    }
+
+    fun listScroll(): Parcelable? = savedStateHandle[KEY_LIST_SCROLL]
 
     /** Magnifier: open the field, or close it when it is already empty. */
     fun onSearchButton() {
@@ -473,6 +481,7 @@ class ConversationsViewModel @Inject constructor(
         private const val SEARCH_DEBOUNCE_MS = 250L
         private const val PROFILE_TTL_MS = 30L * 60L * 1000L
         private const val PROFILE_RETRY_MS = 15_000L
+        private const val KEY_LIST_SCROLL = "conversation_list_scroll"
 
         /**
          * Account photo URL last written by [publishProfile].

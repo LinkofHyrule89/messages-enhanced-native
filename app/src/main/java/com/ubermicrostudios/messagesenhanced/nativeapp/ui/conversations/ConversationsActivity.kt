@@ -21,7 +21,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import coil.load
-import coil.transform.CircleCropTransformation
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.CircleAvatars
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.circleAvatar
 import com.ubermicrostudios.messagesenhanced.nativeapp.R
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.cache.InboxCache
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDto
@@ -37,6 +38,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread.ThreadMenu
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread.ThreadViewModel
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateChecker
 import com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdatePrompts
+import com.ubermicrostudios.messagesenhanced.nativeapp.update.WhatsNewPrompts
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ConversationOrder
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.LastThreadRestore
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.HealthBanner
@@ -52,6 +54,7 @@ class ConversationsActivity : SessionActivity() {
     @Inject lateinit var updateChecker: UpdateChecker
     @Inject lateinit var prefs: AppPreferences
     @Inject lateinit var inboxCache: InboxCache
+    @Inject lateinit var whatsNew: WhatsNewPrompts
 
     private lateinit var binding: ActivityConversationsBinding
     private lateinit var updatePrompts: UpdatePrompts
@@ -65,6 +68,7 @@ class ConversationsActivity : SessionActivity() {
     private var bannerGeneration = 0
     /** Holds the splash until a tablet cold start has the cached thread ready to draw. */
     private var restoreGate = false
+    private var listScrollRestored = false
 
     private val twoPane: Boolean
         get() = binding.threadContainer != null
@@ -83,7 +87,10 @@ class ConversationsActivity : SessionActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
-        splash.setKeepOnScreenCondition { restoreGate }
+        splash.setKeepOnScreenCondition {
+            if (!viewModel.hasSession()) false
+            else restoreGate || !viewModel.state.value.ready
+        }
         if (!viewModel.hasSession()) {
             goToLogin()
             return
@@ -147,6 +154,9 @@ class ConversationsActivity : SessionActivity() {
         )
         binding.list.layoutManager = LinearLayoutManager(this)
         binding.list.adapter = adapter
+        adapter.submitList(ConversationOrder.rows(viewModel.state.value.conversations)) {
+            restoreListScroll()
+        }
         binding.searchResults.layoutManager = LinearLayoutManager(this)
         binding.searchResults.adapter = searchAdapter
 
@@ -230,7 +240,15 @@ class ConversationsActivity : SessionActivity() {
             viewModel.onResume()
             updatePrompts.onHostResume()
             updatePrompts.checkOnLaunch()
+            whatsNew.maybeShow(this)
         }
+    }
+
+    override fun onStop() {
+        if (::binding.isInitialized) {
+            viewModel.saveListScroll(binding.list.layoutManager?.onSaveInstanceState())
+        }
+        super.onStop()
     }
 
     override fun onDestroy() {
@@ -253,7 +271,9 @@ class ConversationsActivity : SessionActivity() {
         adapter.colors = state.colors
         adapter.typingNames = state.typingNames
         adapter.selectedId = state.selectedId
-        adapter.submitList(ConversationOrder.rows(state.conversations))
+        adapter.submitList(ConversationOrder.rows(state.conversations)) {
+            restoreListScroll()
+        }
         state.notice?.let { message ->
             Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
             viewModel.consumeNotice()
@@ -277,7 +297,8 @@ class ConversationsActivity : SessionActivity() {
         )
         searchAdapter.submitList(rows)
         binding.searchResults.isVisible = state.search.phase == SearchPhase.RESULTS
-        binding.progress.isVisible = (state.loading && !searching) || state.search.phase == SearchPhase.LOADING
+        binding.progress.isVisible = (state.loading && state.conversations.isEmpty() && !searching) ||
+            state.search.phase == SearchPhase.LOADING
         binding.empty.isVisible = when {
             state.search.phase == SearchPhase.SHORT -> true
             state.search.phase == SearchPhase.EMPTY -> true
@@ -390,9 +411,10 @@ class ConversationsActivity : SessionActivity() {
             return
         }
         binding.profilePhoto.isVisible = true
+        CircleAvatars.clip(binding.profilePhoto)
         val accountPhoto = profile.photoUrl != null
         binding.profilePhoto.load(url) {
-            transformations(CircleCropTransformation())
+            circleAvatar(url)
             listener(
                 onError = { _, _ ->
                     if (accountPhoto) {
@@ -404,6 +426,13 @@ class ConversationsActivity : SessionActivity() {
                 },
             )
         }
+    }
+
+    private fun restoreListScroll() {
+        if (listScrollRestored) return
+        if (adapter.itemCount == 0) return
+        listScrollRestored = true
+        viewModel.listScroll()?.let { binding.list.layoutManager?.onRestoreInstanceState(it) }
     }
 
     private fun onSearchButton() {
