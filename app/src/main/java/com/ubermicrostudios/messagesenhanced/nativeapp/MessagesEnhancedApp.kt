@@ -6,6 +6,7 @@ import coil.Coil
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.cache.InboxCache
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.NetworkGate
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.PersistentCookieJar
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.AppPreferences
 import com.ubermicrostudios.messagesenhanced.nativeapp.push.MessageNotificationIds
@@ -28,6 +29,7 @@ class MessagesEnhancedApp : Application(), ImageLoaderFactory {
     @Inject lateinit var inboxCache: InboxCache
     @Inject lateinit var cookieJar: PersistentCookieJar
     @Inject lateinit var prefs: AppPreferences
+    @Inject lateinit var networkGate: NetworkGate
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -40,12 +42,14 @@ class MessagesEnhancedApp : Application(), ImageLoaderFactory {
         MessagingService.ensureChannels(this)
         val app = this
         appScope.launch(Dispatchers.IO) {
+            runCatching { networkGate.start() }
             runCatching { prefs.warmSecure() }
             runCatching { cookieJar.warm() }
             runCatching { Push.warm(app) }
         }
         Looper.getMainLooper().queue.addIdleHandler {
             appScope.launch(Dispatchers.IO) {
+                runCatching { networkGate.start() }
                 runCatching { EmojiCatalog.load(app) }
                 runCatching { MessagingService.ensureChannels(app) }
                 runCatching {

@@ -139,7 +139,9 @@
                     <ImageView
                         android:id="@+id/status_icon"
                         android:layout_width="wrap_content"
-                        android:layout_height="16dp"
+                        android:layout_height="18dp"
+                        android:adjustViewBounds="true"
+                        android:scaleType="fitCenter"
                         android:layout_marginEnd="8dp"
                         android:visibility="gone"
                         android:contentDescription="@string/status_sent" />

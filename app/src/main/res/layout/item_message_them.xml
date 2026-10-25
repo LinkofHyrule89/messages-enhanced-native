@@ -233,8 +233,10 @@
 
         <ImageView
             android:id="@+id/receipt_icon"
-            android:layout_width="16dp"
-            android:layout_height="16dp"
+            android:layout_width="wrap_content"
+            android:layout_height="18dp"
+            android:adjustViewBounds="true"
+            android:scaleType="fitCenter"
             android:layout_marginStart="4dp"
             android:contentDescription="@string/status_sent"
             android:visibility="gone" />

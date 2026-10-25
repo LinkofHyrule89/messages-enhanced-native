@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.cache.InboxCache
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.AppPreferences
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.NetworkGate
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.SseClient
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.TypingTracker
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.AuthRepository
@@ -15,6 +16,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.MessagesReposit
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.RemoteSearch
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.ThemeRepository
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.FailureWindow
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.ResumeRetry
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.runCatchingCancellable
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.HealthBanner
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.InboxSearch
@@ -80,6 +82,7 @@ class ConversationsViewModel @Inject constructor(
     private val health: HealthRepository,
     private val inboxCache: InboxCache,
     private val prefs: AppPreferences,
+    private val network: NetworkGate,
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -92,7 +95,7 @@ class ConversationsViewModel @Inject constructor(
         ),
     )
     val state: StateFlow<ConversationsUiState> = _state
-    private val failures = FailureWindow()
+    private val failures = FailureWindow(gate = network)
     private var sseJob: Job? = null
     private var debounceJob: Job? = null
     private var pollJob: Job? = null
@@ -107,6 +110,7 @@ class ConversationsViewModel @Inject constructor(
     private var serverListArrived = false
 
     init {
+        watchNetwork()
         if (auth.hasSession()) {
             sse.ensureStarted()
             health.start()
@@ -152,6 +156,7 @@ class ConversationsViewModel @Inject constructor(
             health.refresh()
         }
         failures.onForeground()
+        clearNetworkError()
         refreshProfile(force = false)
         refresh()
     }
@@ -402,7 +407,7 @@ class ConversationsViewModel @Inject constructor(
                     refreshing = userInitiated,
                 )
             }
-            runCatchingCancellable { messages.conversations() }
+            runCatchingCancellable { withResumeRetry { messages.conversations() } }
                 .onSuccess { list ->
                     failures.success()
                     if (gen != refreshGen) {
@@ -442,6 +447,29 @@ class ConversationsViewModel @Inject constructor(
                 }
         }
     }
+
+    private fun watchNetwork() {
+        viewModelScope.launch {
+            network.foreground.collect { fg ->
+                if (fg) {
+                    failures.onForeground()
+                    clearNetworkError()
+                } else {
+                    failures.onBackground()
+                    clearNetworkError()
+                }
+            }
+        }
+    }
+
+    private fun clearNetworkError() {
+        _state.update { state ->
+            if (NetErrors.isNetworkMessage(state.error)) state.copy(error = null) else state
+        }
+    }
+
+    private suspend fun <T> withResumeRetry(block: suspend () -> T): T =
+        ResumeRetry.run(network, { failures.inQuiet() }, block = block)
 
     private fun scheduleRefresh() {
         debounceJob?.cancel()

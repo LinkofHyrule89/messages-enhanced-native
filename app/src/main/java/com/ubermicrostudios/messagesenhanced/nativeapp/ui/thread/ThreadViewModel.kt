@@ -8,6 +8,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.cache.InboxCache
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.MessageDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.AppPreferences
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.BaseUrlProvider
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.NetworkGate
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.SseClient
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.TypingTracker
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.MessagesRepository
@@ -17,6 +18,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.GifPage
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ComposerPlan
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ConversationEncryption
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.FailureWindow
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.ResumeRetry
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.runCatchingCancellable
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.NetErrors
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDto
@@ -97,6 +99,7 @@ class ThreadViewModel @Inject constructor(
     private val conversationNotifications: ConversationNotifications,
     private val inboxCache: InboxCache,
     private val prefs: AppPreferences,
+    private val network: NetworkGate,
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -131,7 +134,7 @@ class ThreadViewModel @Inject constructor(
     private val _effects = MutableSharedFlow<ThreadEffect>(extraBufferCapacity = 16)
     val effects: SharedFlow<ThreadEffect> = _effects.asSharedFlow()
 
-    private val failures = FailureWindow()
+    private val failures = FailureWindow(gate = network)
     private var sseJob: Job? = null
     private var debounceJob: Job? = null
     private var pollJob: Job? = null
@@ -141,6 +144,7 @@ class ThreadViewModel @Inject constructor(
     private var serverMessagesFor: String? = null
 
     init {
+        watchNetwork()
         sse.ensureStarted()
         viewModelScope.launch {
             themes.revision.collect {
@@ -223,6 +227,7 @@ class ThreadViewModel @Inject constructor(
         foreground = true
         sse.ensureStarted()
         failures.onForeground()
+        clearNetworkError()
         val id = _state.value.conversationId
         if (id.isNotBlank()) {
             refresh(markRead = false)
@@ -273,7 +278,7 @@ class ThreadViewModel @Inject constructor(
                 jumpWindowLoaded = true
             }
             if (gen != refreshGen || _state.value.conversationId != id) return@launch
-            runCatchingCancellable { messagesRepo.messages(id, messageLimit) }
+            runCatchingCancellable { withResumeRetry { messagesRepo.messages(id, messageLimit) } }
                 .onSuccess { list ->
                     failures.success()
                     // Mark read even when this response is stale (a poll/event refresh can
@@ -878,6 +883,29 @@ class ThreadViewModel @Inject constructor(
             }
         }
     }
+
+    private fun watchNetwork() {
+        viewModelScope.launch {
+            network.foreground.collect { fg ->
+                if (fg) {
+                    failures.onForeground()
+                    clearNetworkError()
+                } else {
+                    failures.onBackground()
+                    clearNetworkError()
+                }
+            }
+        }
+    }
+
+    private fun clearNetworkError() {
+        _state.update { state ->
+            if (NetErrors.isNetworkMessage(state.error)) state.copy(error = null) else state
+        }
+    }
+
+    private suspend fun <T> withResumeRetry(block: suspend () -> T): T =
+        ResumeRetry.run(network, { failures.inQuiet() }, block = block)
 
     /** Debounced refresh, like the web app's scheduleRefresh (150 ms). */
     private fun scheduleRefresh() {

@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.9
+
+- Fixed the red 'Can’t reach the server' message that could flash when returning to the app.
+- Delivery and read checkmarks are larger and easier to see in the conversation list and in chats.
+
 ## v0.6.8
 
 - Conversation photos are round again in the list, the chat header, group collages, read-by chips, photo-viewer replies, the share picker, group details, and notification icons.
