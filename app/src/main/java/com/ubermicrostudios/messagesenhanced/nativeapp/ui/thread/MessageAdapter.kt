@@ -20,6 +20,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import com.google.android.material.imageview.ShapeableImageView
 import androidx.recyclerview.widget.DiffUtil
@@ -160,31 +161,34 @@ class MessageAdapter(
     }
 
     inner class ThemHolder(private val b: ItemMessageThemBinding) : RecyclerView.ViewHolder(b.root) {
-        fun bind(row: MessageRuns.Row) = bindBubble(
-            row,
-            root = b.root,
-            bubble = b.bubble,
-            fromMe = false,
-            sender = b.sender,
-            body = b.body,
-            time = b.time,
-            lockIcon = b.lockIcon,
-            reactions = b.reactions,
-            image = b.image,
-            attachment = b.attachment,
-            linkCard = b.linkCard,
-            linkImage = b.linkImage,
-            linkSite = b.linkSite,
-            linkTitle = b.linkTitle,
-            linkDesc = b.linkDesc,
-            receipt = b.receipt,
-            receiptAvatars = b.receiptAvatars,
-            receiptLabel = b.receiptLabel,
-            receiptIcon = b.receiptIcon,
-            tapDetail = b.tapDetail,
-            tapDetailText = b.tapDetailText,
-            tapDetailLock = b.tapDetailLock,
-        )
+        fun bind(row: MessageRuns.Row) {
+            bindBubble(
+                row,
+                root = b.root,
+                bubble = b.bubble,
+                fromMe = false,
+                sender = b.sender,
+                body = b.body,
+                time = b.time,
+                lockIcon = b.lockIcon,
+                reactions = b.reactions,
+                image = b.image,
+                attachment = b.attachment,
+                linkCard = b.linkCard,
+                linkImage = b.linkImage,
+                linkSite = b.linkSite,
+                linkTitle = b.linkTitle,
+                linkDesc = b.linkDesc,
+                receipt = b.receipt,
+                receiptAvatars = b.receiptAvatars,
+                receiptLabel = b.receiptLabel,
+                receiptIcon = b.receiptIcon,
+                tapDetail = b.tapDetail,
+                tapDetailText = b.tapDetailText,
+                tapDetailLock = b.tapDetailLock,
+            )
+            bindSenderAvatar(row, b.senderAvatar)
+        }
     }
 
     private fun bindBubble(
@@ -325,6 +329,31 @@ class MessageAdapter(
         time.text = clock
         icon.isVisible = locked
         icon.imageTintList = ColorStateList.valueOf(root.context.getColor(R.color.muted))
+    }
+
+    /**
+     * Letter avatar left of the first bubble in a group sender run.
+     * Mid-run rows keep an invisible spacer so bubbles stay aligned.
+     * Reply status does not affect visibility — only [MessageRuns.Row.showSender].
+     */
+    private fun bindSenderAvatar(row: MessageRuns.Row, avatar: TextView) {
+        val item = row.message
+        if (!conversation().isGroup || item.isFromMe) {
+            avatar.visibility = View.GONE
+            return
+        }
+        if (!row.showSender) {
+            avatar.visibility = View.INVISIBLE
+            avatar.text = ""
+            return
+        }
+        val seed = item.senderNumber.ifBlank { item.senderName }.ifBlank { "?" }
+        val label = seed.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "#"
+        avatar.visibility = View.VISIBLE
+        avatar.text = label
+        val bg = ContextCompat.getDrawable(avatar.context, R.drawable.bg_sender_avatar)?.mutate()
+        bg?.setTint(Participants.avatarColor(seed))
+        avatar.background = bg
     }
 
     private fun bindQuote(root: View, item: MessageDto) {

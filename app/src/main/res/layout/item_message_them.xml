@@ -15,11 +15,40 @@
         android:orientation="vertical"
         app:layout_constraintGuide_percent="0.75" />
 
+    <!-- Sender name + avatar sit ABOVE the bubble (Google Messages): replies still
+         show the reply author here; the quote inside the bubble is the original. -->
+    <TextView
+        android:id="@+id/sender_avatar"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginStart="8dp"
+        android:gravity="center"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:visibility="gone"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@id/bubble" />
+
+    <TextView
+        android:id="@+id/sender"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginBottom="2dp"
+        android:textColor="#9CC3FF"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:visibility="gone"
+        app:layout_constraintStart_toEndOf="@id/sender_avatar"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_goneMarginStart="8dp" />
+
     <LinearLayout
         android:id="@+id/bubble"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="4dp"
+        android:layout_marginStart="8dp"
         android:background="@drawable/bg_bubble_them"
         android:orientation="vertical"
         android:paddingStart="12dp"
@@ -28,8 +57,9 @@
         android:paddingBottom="6dp"
         app:layout_constraintEnd_toEndOf="@id/edge"
         app:layout_constraintHorizontal_bias="0"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toEndOf="@id/sender_avatar"
+        app:layout_constraintTop_toBottomOf="@id/sender"
+        app:layout_goneMarginStart="8dp"
         app:layout_constraintWidth_default="wrap">
 
         <LinearLayout
@@ -67,16 +97,6 @@
                 android:textColor="#B8FFFFFF"
                 android:textSize="13sp" />
         </LinearLayout>
-
-        <TextView
-            android:id="@+id/sender"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingBottom="2dp"
-            android:textColor="#9CC3FF"
-            android:textSize="12sp"
-            android:textStyle="bold"
-            android:visibility="gone" />
 
         <ImageView
             android:id="@+id/image"

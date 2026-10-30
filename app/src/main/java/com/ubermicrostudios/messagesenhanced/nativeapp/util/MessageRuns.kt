@@ -6,6 +6,11 @@ import java.util.Calendar
 /**
  * Consecutive-message grouping from the web app's `sameRun`: same sender,
  * under 15 minutes apart, and the same calendar day.
+ *
+ * Group sender headers (name + avatar above the bubble) show at the start of
+ * each sender run only. Reply status ([MessageDto.replyToId]) must not affect
+ * [Row.showSender] — a reply that starts a run still shows the reply author's
+ * name, matching Google Messages.
  */
 object MessageRuns {
     const val GAP_MS = 15 * 60 * 1000L
@@ -40,6 +45,7 @@ object MessageRuns {
                 message = message,
                 pos = pos,
                 showReceipt = index == lastMine,
+                // ReplyToID is intentionally ignored: replies use the same run rules.
                 showSender = isGroup && !message.isFromMe && !prev &&
                     (message.senderName.isNotBlank() || message.senderNumber.isNotBlank()),
             )

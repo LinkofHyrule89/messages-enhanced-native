@@ -86,17 +86,42 @@ object HealthBanner {
         val lines = ArrayList<String>(checks.size)
         for (check in checks) {
             if (check.ok || check.downSinceMs <= 0L || nowMs - check.downSinceMs < PERSIST_MS) continue
-            val what = if (check.name == "vpn") "VPN is down" else "Google Messages is disconnected"
+            val vpn = check.name == "vpn"
+            val what = if (vpn) "VPN is down" else "Google Messages is disconnected"
             val detail = if (check.detail.isNotEmpty()) " (${check.detail})" else ""
-            lines.add("$what$detail since ${formatClock(check.downSinceMs)}. New messages may be delayed.")
+            val extra = if (vpn) "" else " Tap to reconnect Google Messages."
+            lines.add("$what$detail since ${formatClock(check.downSinceMs)}. New messages may be delayed.$extra")
         }
         return lines
     }
 
+    /**
+     * Open [com.ubermicrostudios.messagesenhanced.nativeapp.ui.settings.GoogleReconnectActivity]
+     * when the banner is about Google / pairing, not a VPN-only outage.
+     */
+    fun opensGoogleReconnect(banner: Banner): Boolean {
+        if (banner.severity != Severity.DOWN && banner.severity != Severity.WARN) return false
+        val text = banner.text
+        return text.contains("Google") || text.contains("paired") || text.contains("Disconnected")
+    }
+
     private fun pairingBanner(pairing: PairingResponse, nowMs: Long, unstableSinceMs: Long?): Banner? {
+        val st = pairing.pairing
+        if (st?.state == "emoji" && st.emoji.isNotBlank()) {
+            return Banner(
+                "Confirm on your phone: tap ${st.emoji} in Google Messages.",
+                Severity.WARN,
+            )
+        }
+        if (pairing.signInNeeded) {
+            return Banner(
+                "Google sign-in expired. Sign in again to reconnect Google Messages.",
+                Severity.DOWN,
+            )
+        }
         val google = pairing.google
         if (google?.needsPairing == true || google?.needsRepair == true) {
-            return Banner("Not paired with your phone yet. Pair from the web app.", Severity.WARN)
+            return Banner("Not paired with your phone yet. Tap to reconnect.", Severity.WARN)
         }
         if (google?.connected == true) {
             return if (google.phoneResponding == false) {
@@ -110,7 +135,7 @@ object HealthBanner {
         return if (isConnecting(google, pairing.pairing?.state)) {
             Banner("Connecting to Google Messages…", Severity.WARN)
         } else {
-            Banner("Disconnected from Google Messages. Retrying…", Severity.DOWN)
+            Banner("Disconnected from Google Messages. Tap to reconnect Google Messages.", Severity.DOWN)
         }
     }
 

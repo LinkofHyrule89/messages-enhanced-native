@@ -39,8 +39,8 @@ android {
         applicationId = "com.ubermicrostudios.messagesenhanced.nativeapp"
         minSdk = 26
         targetSdk = 36
-        versionCode = 15
-        versionName = "0.6.9"
+        versionCode = 16
+        versionName = "0.7.0"
         buildConfigField("String", "GITHUB_OWNER", "\"LinkofHyrule89\"")
         buildConfigField("String", "GITHUB_REPO", "\"messages-enhanced-native\"")
     }
@@ -89,6 +89,10 @@ android {
     }
     testOptions {
         unitTests.isReturnDefaultValues = true
+    }
+    lint {
+        // AGP 9 / lint RecyclerViewDetector crashes on MessageAdapter.kt (Kotlin analysis bug).
+        disable += setOf("NotifyDataSetChanged", "PendingBindings", "RecyclerView")
     }
     packaging {
         resources {

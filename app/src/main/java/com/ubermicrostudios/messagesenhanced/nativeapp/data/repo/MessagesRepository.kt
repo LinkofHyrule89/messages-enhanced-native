@@ -36,6 +36,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.InboxFilter
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.InboxSearch
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.NetErrors
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
@@ -302,6 +305,33 @@ class MessagesRepository @Inject constructor(
     }
 
     suspend fun grokStatus(): GrokStatus = api.grokStatus()
+
+
+    /** Server default is on when the key is absent. */
+    suspend fun autoGoogleRepairEnabled(): Boolean {
+        val settings = api.appSettings().settings
+        val el = settings["auto_google_repair"] as? kotlinx.serialization.json.JsonPrimitive ?: return true
+        return when {
+            el.booleanOrNull != null -> el.booleanOrNull == true
+            el.contentOrNull.equals("false", true) || el.contentOrNull == "0" || el.contentOrNull.equals("off", true) -> false
+            else -> true
+        }
+    }
+
+    /** PUT merges onto the current settings object (server replaces wholesale). */
+    suspend fun setAutoGoogleRepair(enabled: Boolean): Boolean {
+        val current = api.appSettings().settings.toMutableMap()
+        current["auto_google_repair"] = JsonPrimitive(enabled)
+        val saved = api.putSettings(JsonObject(current)).settings
+        val el = saved["auto_google_repair"] as? kotlinx.serialization.json.JsonPrimitive
+        return when {
+            el == null -> true
+            el.booleanOrNull != null -> el.booleanOrNull == true
+            else -> !el.contentOrNull.equals("false", true)
+        }
+    }
+
+    suspend fun forgetGoogleSession() = api.forgetGoogleCookies()
 
     suspend fun saveGrok(enabled: Boolean, trigger: String, groqEnabled: Boolean?): GrokStatus =
         api.updateGrok(GrokUpdate(enabled = enabled, trigger = trigger, groqEnabled = groqEnabled))

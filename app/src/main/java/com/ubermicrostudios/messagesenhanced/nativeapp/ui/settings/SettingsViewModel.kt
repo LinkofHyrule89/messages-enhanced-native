@@ -27,6 +27,8 @@ data class SettingsUiState(
     val message: String? = null,
     val loggedOut: Boolean = false,
     val appearance: String = AppSettingsSync.DARK,
+    val autoGoogleRepair: Boolean = true,
+    val sessionSaved: Boolean = false,
     val grokVisible: Boolean = false,
     val grokUnavailable: Boolean = false,
     val grokEnabled: Boolean = false,
@@ -61,11 +63,13 @@ class SettingsViewModel @Inject constructor(
         }
         viewModelScope.launch { runCatchingCancellable { themes.ensureLoaded() } }
         loadGrok()
+        loadAutoRepair()
     }
 
     fun onResume() {
         viewModelScope.launch { runCatchingCancellable { themes.refresh() } }
         loadGrok()
+        loadAutoRepair()
     }
 
     fun refreshEverything() {
@@ -173,6 +177,60 @@ class SettingsViewModel @Inject constructor(
     fun consumeMessage() {
         _state.update { it.copy(message = null) }
     }
+
+    fun setAutoGoogleRepair(enabled: Boolean) {
+        if (enabled == _state.value.autoGoogleRepair) return
+        viewModelScope.launch {
+            _state.update { it.copy(busy = true, message = null, autoGoogleRepair = enabled) }
+            runCatchingCancellable { messages.setAutoGoogleRepair(enabled) }
+                .onSuccess { on ->
+                    _state.update {
+                        it.copy(
+                            busy = false,
+                            autoGoogleRepair = on,
+                            message = if (on) "Auto re-pair on." else "Auto re-pair off.",
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            busy = false,
+                            autoGoogleRepair = !enabled,
+                            message = NetErrors.friendly(error),
+                        )
+                    }
+                }
+        }
+    }
+
+    fun forgetGoogleSession() {
+        viewModelScope.launch {
+            _state.update { it.copy(busy = true, message = null) }
+            runCatchingCancellable { messages.forgetGoogleSession() }
+                .onSuccess { pairing ->
+                    _state.update {
+                        it.copy(
+                            busy = false,
+                            sessionSaved = pairing.sessionSaved,
+                            autoGoogleRepair = pairing.autoRepairEnabled,
+                            message = "Saved Google session forgotten.",
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _state.update { it.copy(busy = false, message = NetErrors.friendly(error)) }
+                }
+        }
+    }
+
+    private fun loadAutoRepair() {
+        viewModelScope.launch {
+            runCatchingCancellable { messages.autoGoogleRepairEnabled() }
+                .onSuccess { on -> _state.update { it.copy(autoGoogleRepair = on) } }
+        }
+    }
+
 
     private fun loadGrok() {
         viewModelScope.launch {

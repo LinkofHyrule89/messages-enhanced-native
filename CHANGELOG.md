@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.0
+
+- Reconnect Google Messages from Settings (or the red disconnected banner): sign in in the app, send cookies to your server, confirm the emoji on your phone.
+- Cookie values are never stored or logged on the phone.
+- Auto re-pair Google (default on): when the server has a saved session it reconnects on its own; confirm the emoji on your phone. Settings can turn this off or forget the saved session.
+- Banner shows “Confirm on your phone” with the emoji, or asks you to sign in again when the saved session was rejected.
+- Group chats: a reply still shows the sender's name and avatar above the bubble at the start of their run (like Google Messages).
+
 ## v0.6.9
 
 - Fixed the red 'Can’t reach the server' message that could flash when returning to the app.

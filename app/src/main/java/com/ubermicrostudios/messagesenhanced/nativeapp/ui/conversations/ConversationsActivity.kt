@@ -30,6 +30,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.AppPreferences
 import com.ubermicrostudios.messagesenhanced.nativeapp.databinding.ActivityConversationsBinding
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.Insets
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.SessionActivity
+import com.ubermicrostudios.messagesenhanced.nativeapp.ui.settings.GoogleReconnectActivity
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.settings.SettingsActivity
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread.DetailsSheet
 import com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread.ThreadActivity
@@ -66,6 +67,7 @@ class ConversationsActivity : SessionActivity() {
     private var threadServerError = false
     private var bannerPhase = BannerPhase.HIDDEN
     private var bannerGeneration = 0
+    private var shownHealthBanner: HealthBanner.Banner? = null
     /** Holds the splash until a tablet cold start has the cached thread ready to draw. */
     private var restoreGate = false
     private var listScrollRestored = false
@@ -162,6 +164,11 @@ class ConversationsActivity : SessionActivity() {
 
         binding.profile.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
+        }
+        binding.healthBanner.setOnClickListener {
+            val banner = shownHealthBanner ?: return@setOnClickListener
+            if (!HealthBanner.opensGoogleReconnect(banner)) return@setOnClickListener
+            startActivity(Intent(this, GoogleReconnectActivity::class.java))
         }
         binding.profile.contentDescription = getString(R.string.profile_open_settings)
         binding.searchButton.setOnClickListener { onSearchButton() }
@@ -358,6 +365,7 @@ class ConversationsActivity : SessionActivity() {
         view.animate().cancel()
         if (immediate || !view.isVisible) {
             bannerPhase = BannerPhase.HIDDEN
+            shownHealthBanner = null
             view.alpha = 1f
             view.isVisible = false
             return
@@ -366,13 +374,18 @@ class ConversationsActivity : SessionActivity() {
         view.animate().alpha(0f).setDuration(BANNER_FADE_MS).withEndAction {
             if (generation != bannerGeneration) return@withEndAction
             bannerPhase = BannerPhase.HIDDEN
+            shownHealthBanner = null
             view.isVisible = false
             view.alpha = 1f
         }.start()
     }
 
     private fun paintHealthBanner(banner: HealthBanner.Banner) {
+        shownHealthBanner = banner
         val view = binding.healthBanner
+        val reconnect = HealthBanner.opensGoogleReconnect(banner)
+        view.isClickable = reconnect
+        view.isFocusable = reconnect
         val warn = banner.severity == HealthBanner.Severity.WARN
         val bgAttr = if (warn) {
             com.google.android.material.R.attr.colorTertiaryContainer

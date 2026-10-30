@@ -1,6 +1,8 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.ui.settings
 
 import android.Manifest
+import androidx.appcompat.app.AlertDialog
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -66,6 +68,20 @@ class SettingsActivity : SessionActivity() {
 
         binding.serverUrl.doAfterTextChanged { viewModel.onServerUrl(it?.toString().orEmpty()) }
         binding.saveServer.setOnClickListener { viewModel.saveServerUrl() }
+        binding.reconnectGoogle.setOnClickListener {
+            startActivity(Intent(this, GoogleReconnectActivity::class.java))
+        }
+        binding.autoGoogleRepair.setOnCheckedChangeListener { _, checked ->
+            if (checked == viewModel.state.value.autoGoogleRepair) return@setOnCheckedChangeListener
+            viewModel.setAutoGoogleRepair(checked)
+        }
+        binding.forgetGoogleSession.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setMessage(R.string.forget_google_session_confirm)
+                .setPositiveButton(android.R.string.ok) { _, _ -> viewModel.forgetGoogleSession() }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
         binding.notifications.setOnCheckedChangeListener { _, checked ->
             if (checked == viewModel.state.value.notifications) return@setOnCheckedChangeListener
             if (checked) enableNotifications() else viewModel.setNotifications(false)
@@ -102,6 +118,9 @@ class SettingsActivity : SessionActivity() {
                     binding.appearance.text = getString(R.string.appearance_label, appearanceLabel(state.appearance))
                     binding.notifications.isChecked = state.notifications
                     binding.hideText.isChecked = state.hideText
+                    binding.autoGoogleRepair.isChecked = state.autoGoogleRepair
+                    binding.autoGoogleRepair.isEnabled = !state.busy
+                    binding.forgetGoogleSession.isEnabled = !state.busy
                     binding.hideText.isEnabled = state.notifications && !state.busy
                     binding.testNotification.isEnabled = state.notifications && !state.busy
                     binding.notifications.isEnabled = !state.busy

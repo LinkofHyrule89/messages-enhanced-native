@@ -195,4 +195,10 @@
     <string name="update_failed_generic">The update could not be installed.</string>
     <string name="whats_new_title">What\'s new in %1$s</string>
     <string name="whats_new_ok">Got it</string>
+    <string name="reconnect_google">Reconnect Google Messages</string>
+    <string name="auto_google_repair">Auto re-pair Google</string>
+    <string name="auto_google_repair_desc">When Google signs out, reconnect using the saved session. You only confirm the emoji on your phone.</string>
+    <string name="forget_google_session">Forget saved Google session</string>
+    <string name="forget_google_session_confirm">Forget the saved Google session on the server? You will need to sign in again to reconnect.</string>
+    <string name="reconnect_continue">I\'ve signed in — Continue</string>
 </resources>

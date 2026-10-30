@@ -11,6 +11,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.StartConversat
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.LinkPreviewDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.MuteRequest
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.GifPage
+import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.GoogleCookiesRequest
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.GrokStatus
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.GrokUpdate
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.HealthResponse
@@ -235,4 +236,15 @@ interface MessagesApi {
     /** Google Messages pairing and connection. Same failure policy as [appHealth]. */
     @GET("/api/app/pairing")
     suspend fun appPairing(): PairingResponse
+
+    /**
+     * POST Google sign-in cookies so the server can pair Messages for Web.
+     * Cookie values must never be logged. Returns 202 with the same pairing payload as [appPairing].
+     */
+    @POST("/api/app/google/cookies")
+    suspend fun submitGoogleCookies(@Body body: GoogleCookiesRequest): PairingResponse
+
+    /** Clears the encrypted Google cookie vault on the server. */
+    @POST("/api/app/google/cookies/forget")
+    suspend fun forgetGoogleCookies(): PairingResponse
 }

@@ -8,6 +8,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.PairingRespons
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.PairingStateDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.HealthBanner
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -57,6 +58,7 @@ class HealthBannerTest {
             banner!!.text,
         )
         assertEquals(HealthBanner.Severity.DOWN, banner.severity)
+        assertFalse(HealthBanner.opensGoogleReconnect(banner))
     }
 
     @Test
@@ -68,9 +70,10 @@ class HealthBannerTest {
         )
         val banner = HealthBanner.banner(health, null, nowMs = 35_000, clock, null)
         assertEquals(
-            "Google Messages is disconnected (needs pairing) since 9:00 AM. New messages may be delayed.",
+            "Google Messages is disconnected (needs pairing) since 9:00 AM. New messages may be delayed. Tap to reconnect Google Messages.",
             banner!!.text,
         )
+        assertTrue(HealthBanner.opensGoogleReconnect(banner))
         val other = HealthBanner.banner(
             HealthResponse(checks = listOf(HealthCheckDto(name = "VPN", ok = false, downSinceMs = 5_000))),
             null,
@@ -79,9 +82,10 @@ class HealthBannerTest {
             null,
         )
         assertEquals(
-            "Google Messages is disconnected since 9:00 AM. New messages may be delayed.",
+            "Google Messages is disconnected since 9:00 AM. New messages may be delayed. Tap to reconnect Google Messages.",
             other!!.text,
         )
+        assertTrue(HealthBanner.opensGoogleReconnect(other))
     }
 
     @Test
@@ -122,7 +126,7 @@ class HealthBannerTest {
         val banner = HealthBanner.banner(health, null, nowMs = 40_000, clock, null)
         assertEquals(
             "VPN is down since 9:00 AM. New messages may be delayed. " +
-                "Google Messages is disconnected (disconnected) since 9:00 AM. New messages may be delayed.",
+                "Google Messages is disconnected (disconnected) since 9:00 AM. New messages may be delayed. Tap to reconnect Google Messages.",
             banner!!.text,
         )
         assertEquals(HealthBanner.Severity.DOWN, banner.severity)
@@ -139,17 +143,28 @@ class HealthBannerTest {
     }
 
     @Test
+    fun needsPairing_textMentionsReconnectOrTap() {
+        val banner = HealthBanner.banner(null, paired(needsPairing = true), 0, clock, null)!!
+        val text = banner.text.lowercase()
+        assertTrue(text.contains("reconnect") || text.contains("tap"))
+        assertTrue(HealthBanner.opensGoogleReconnect(banner))
+    }
+
+    @Test
     fun needsPairing_andNeedsRepair_showImmediately() {
-        val pairing = "Not paired with your phone yet. Pair from the web app."
+        val pairing = "Not paired with your phone yet. Tap to reconnect."
         val needsPair = HealthBanner.banner(null, paired(needsPairing = true, connected = false), 0, clock, null)
         assertEquals(pairing, needsPair!!.text)
         assertEquals(HealthBanner.Severity.WARN, needsPair.severity)
+        assertTrue(needsPair.text.contains("reconnect") || needsPair.text.contains("tap", ignoreCase = true))
+        assertTrue(HealthBanner.opensGoogleReconnect(needsPair))
         assertNull(HealthBanner.nextClock(null, paired(needsPairing = true), 0))
 
         val repair = paired(connected = true, needsRepair = true, phone = false)
         val banner = HealthBanner.banner(null, repair, nowMs = 0, clock, unstableSinceMs = null)
         assertEquals(pairing, banner!!.text)
         assertEquals(HealthBanner.Severity.WARN, banner.severity)
+        assertTrue(HealthBanner.opensGoogleReconnect(banner))
         assertNull(HealthBanner.nextClock(null, repair, 5_000))
     }
 
@@ -161,6 +176,7 @@ class HealthBannerTest {
             offline!!.text,
         )
         assertEquals(HealthBanner.Severity.WARN, offline.severity)
+        assertFalse(HealthBanner.opensGoogleReconnect(offline))
         assertNull(HealthBanner.banner(null, paired(connected = true, phone = true), 0, clock, null))
         assertNull(HealthBanner.banner(null, paired(connected = true, phone = null), 0, clock, null))
         assertNull(HealthBanner.nextClock(null, paired(connected = true, phone = false), 0))
@@ -191,6 +207,7 @@ class HealthBannerTest {
         assertEquals("Connecting to Google Messages…", shown!!.text)
         assertEquals(HealthBanner.Severity.WARN, shown.severity)
         assertTrue(shown.text.endsWith("\u2026"))
+        assertTrue(HealthBanner.opensGoogleReconnect(shown))
 
         tracked = HealthBanner.nextClock(tracked, connecting, nowMs = 40_000)
         assertEquals(1_000L, tracked!!.sinceMs)
@@ -201,8 +218,9 @@ class HealthBannerTest {
         assertEquals(50_000L, tracked!!.sinceMs)
         assertNull(HealthBanner.banner(null, dropped, nowMs = 79_999, clock, tracked!!.sinceMs))
         val down = HealthBanner.banner(null, dropped, nowMs = 80_000, clock, tracked!!.sinceMs)
-        assertEquals("Disconnected from Google Messages. Retrying…", down!!.text)
+        assertEquals("Disconnected from Google Messages. Tap to reconnect Google Messages.", down!!.text)
         assertEquals(HealthBanner.Severity.DOWN, down.severity)
+        assertTrue(HealthBanner.opensGoogleReconnect(down))
     }
 
     @Test
@@ -222,7 +240,7 @@ class HealthBannerTest {
         assertEquals(HealthBanner.Unstable.DISCONNECTED, idleClock!!.kind)
         assertNull(HealthBanner.banner(null, idle, nowMs = 0, clock, unstableSinceMs = null))
         assertEquals(
-            "Disconnected from Google Messages. Retrying…",
+            "Disconnected from Google Messages. Tap to reconnect Google Messages.",
             HealthBanner.banner(null, idle, nowMs = 30_000, clock, idleClock.sinceMs)!!.text,
         )
     }
@@ -310,7 +328,7 @@ class HealthBannerTest {
             """
             {
               "cookies_saved": true,
-              "pairing": {"state":"emoji","emoji":"🐱","updated_at":5},
+              "pairing": {"state":"emoji","emoji":"🐱","message":"Tap this on your phone","updated_at":5},
               "google": {
                 "connected": false,
                 "paired": true,
@@ -324,6 +342,8 @@ class HealthBannerTest {
             """.trimIndent(),
         )
         assertEquals("emoji", pairing.pairing!!.state)
+        assertEquals("🐱", pairing.pairing!!.emoji)
+        assertEquals("Tap this on your phone", pairing.pairing!!.message)
         assertEquals(false, pairing.google!!.connected)
         assertTrue(pairing.google!!.needsRepair)
         assertTrue(pairing.google!!.connecting)
@@ -352,4 +372,31 @@ class HealthBannerTest {
             phoneResponding = phone,
         ),
     )
+
+    @Test
+    fun emojiConfirm_showsImmediately() {
+        val pairing = PairingResponse(
+            google = GoogleConnectionDto(connected = false, connecting = true),
+            pairing = PairingStateDto(state = "emoji", emoji = "🦊"),
+        )
+        val banner = HealthBanner.banner(null, pairing, nowMs = 1_000, clock, unstableSinceMs = 0)
+        assertEquals("Confirm on your phone: tap 🦊 in Google Messages.", banner!!.text)
+        assertEquals(HealthBanner.Severity.WARN, banner.severity)
+        assertTrue(HealthBanner.opensGoogleReconnect(banner))
+    }
+
+    @Test
+    fun signInNeeded_showsReconnectPrompt() {
+        val pairing = PairingResponse(
+            google = GoogleConnectionDto(connected = false, needsRepair = false),
+            signInNeeded = true,
+        )
+        val banner = HealthBanner.banner(null, pairing, nowMs = 1_000, clock, unstableSinceMs = 0)
+        assertEquals(
+            "Google sign-in expired. Sign in again to reconnect Google Messages.",
+            banner!!.text,
+        )
+        assertTrue(HealthBanner.opensGoogleReconnect(banner))
+    }
+
 }

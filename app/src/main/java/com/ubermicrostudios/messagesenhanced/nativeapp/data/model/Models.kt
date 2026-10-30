@@ -471,13 +471,24 @@ data class GoogleConnectionDto(
 @Serializable
 data class PairingStateDto(
     val state: String = "",
+    @SerialName("emoji") val emoji: String = "",
+    @SerialName("message") val message: String = "",
 )
 
-/** GET /api/app/pairing. Unknown keys (cookies, emoji, timestamps) are ignored. */
+/** GET /api/app/pairing. Unknown keys (cookies, timestamps) are ignored. */
 @Serializable
 data class PairingResponse(
     val google: GoogleConnectionDto? = null,
     val pairing: PairingStateDto? = null,
+    @SerialName("auto_repair_enabled") val autoRepairEnabled: Boolean = true,
+    @SerialName("session_saved") val sessionSaved: Boolean = false,
+    @SerialName("sign_in_needed") val signInNeeded: Boolean = false,
+)
+
+/** POST /api/app/google/cookies. Cookie values are never stored or logged on the phone. */
+@Serializable
+data class GoogleCookiesRequest(
+    val cookies: Map<String, String>,
 )
 
 @Serializable

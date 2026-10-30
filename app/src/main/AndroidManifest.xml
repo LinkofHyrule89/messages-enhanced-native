@@ -99,6 +99,13 @@
             android:windowSoftInputMode="adjustResize" />
 
         <activity
+            android:name=".ui.settings.GoogleReconnectActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.settings.SettingsActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".ui.conversations.NewChatActivity"
             android:exported="false"
             android:parentActivityName=".ui.conversations.ConversationsActivity"
