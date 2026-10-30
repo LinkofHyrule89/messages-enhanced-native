@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.2
+
+- The go-to-newest button now shows whenever you are not at the bottom of a conversation (about two messages up), whether the newest messages are read, unread, or your own. The badge still counts only new incoming messages.
+
 ## v0.7.1
 
 - Go to newest message: a round down-arrow button appears at the bottom-right of a conversation when you scroll up more than a screen. Tap it to smooth-scroll to the newest message (jumps instantly when far).

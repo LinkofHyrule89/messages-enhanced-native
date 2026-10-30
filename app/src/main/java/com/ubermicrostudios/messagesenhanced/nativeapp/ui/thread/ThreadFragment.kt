@@ -546,7 +546,7 @@ class ThreadFragment : Fragment() {
         }
     }
 
-    // Google Messages-style "go to newest" FAB: visible when scrolled up more than ~a screen.
+    // Google Messages-style "go to newest" FAB: visible whenever not at the bottom.
     private var jumpUnread = 0
     private var tailMessageId: String? = null
 
@@ -560,7 +560,7 @@ class ThreadFragment : Fragment() {
         val dist = distanceFromBottom()
         val near = (120f * resources.displayMetrics.density).toInt()
         if (dist < near) jumpUnread = 0
-        val show = adapter.itemCount > 0 && (dist > current.messages.height || (jumpUnread > 0 && dist >= near))
+        val show = adapter.itemCount > 0 && dist >= near
         current.jumpNewest.isVisible = show
         current.jumpNewestBadge.isVisible = jumpUnread > 0
         current.jumpNewestBadge.text = if (jumpUnread > 99) "99+" else jumpUnread.toString()
