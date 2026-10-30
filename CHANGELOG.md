@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.1
+
+- Go to newest message: a round down-arrow button appears at the bottom-right of a conversation when you scroll up more than a screen. Tap it to smooth-scroll to the newest message (jumps instantly when far).
+- The button shows an unread badge when new messages arrive while you are scrolled up, and incoming messages no longer pull you away from what you are reading.
+
 ## v0.7.0
 
 - Reconnect Google Messages from Settings (or the red disconnected banner): sign in in the app, send cookies to your server, confirm the emoji on your phone.

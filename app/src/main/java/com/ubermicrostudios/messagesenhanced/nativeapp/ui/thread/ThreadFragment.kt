@@ -256,6 +256,10 @@ class ThreadFragment : Fragment() {
         binding.messages.adapter = adapter
         binding.messages.clipToPadding = false
         binding.messages.clipChildren = false
+        binding.messages.addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+            override fun onScrolled(rv: androidx.recyclerview.widget.RecyclerView, dx: Int, dy: Int) = updateJumpButton()
+        })
+        binding.jumpNewestButton.setOnClickListener { jumpToNewest() }
         val initial = viewModel.state.value
         adapter.submitList(MessageRuns.rows(initial.messages, initial.isGroup)) {
             restoreMessageScroll(initial)
@@ -542,8 +546,49 @@ class ThreadFragment : Fragment() {
         }
     }
 
+    // Google Messages-style "go to newest" FAB: visible when scrolled up more than ~a screen.
+    private var jumpUnread = 0
+    private var tailMessageId: String? = null
+
+    private fun distanceFromBottom(): Int {
+        val list = binding.messages
+        return list.computeVerticalScrollRange() - list.computeVerticalScrollOffset() - list.computeVerticalScrollExtent()
+    }
+
+    private fun updateJumpButton() {
+        val current = _binding ?: return
+        val dist = distanceFromBottom()
+        val near = (120f * resources.displayMetrics.density).toInt()
+        if (dist < near) jumpUnread = 0
+        val show = adapter.itemCount > 0 && (dist > current.messages.height || (jumpUnread > 0 && dist >= near))
+        current.jumpNewest.isVisible = show
+        current.jumpNewestBadge.isVisible = jumpUnread > 0
+        current.jumpNewestBadge.text = if (jumpUnread > 99) "99+" else jumpUnread.toString()
+    }
+
+    private fun jumpToNewest() {
+        val last = adapter.itemCount - 1
+        if (last < 0) return
+        val lm = binding.messages.layoutManager as? LinearLayoutManager
+        val first = lm?.findLastVisibleItemPosition() ?: last
+        if (last - first > 30) binding.messages.scrollToPosition(last - 8)
+        binding.messages.post { _binding?.messages?.smoothScrollToPosition(last) }
+        jumpUnread = 0
+        updateJumpButton()
+    }
+
+    private fun noteIncoming(rows: List<com.ubermicrostudios.messagesenhanced.nativeapp.util.MessageRuns.Row>, atBottom: Boolean) {
+        val prev = tailMessageId
+        tailMessageId = rows.lastOrNull()?.message?.messageId
+        if (atBottom || prev == null) { jumpUnread = 0; return }
+        val idx = rows.indexOfLast { it.message.messageId == prev }
+        if (idx < 0) return
+        jumpUnread += rows.drop(idx + 1).count { !it.message.isFromMe && !it.message.status.startsWith("TOMBSTONE", ignoreCase = true) }
+    }
+
     private fun updateListPadding() {
         val current = _binding ?: return
+        current.jumpNewest.translationY = -current.composerDock.height.toFloat()
         val top = if (current.selectBar.isVisible) current.selectBar.height else current.header.height
         current.messages.setPadding(
             current.messages.paddingLeft,
@@ -725,9 +770,15 @@ class ThreadFragment : Fragment() {
             if (hasRows) binding.messages.scrollToPosition(adapter.itemCount - 1)
             return
         }
-        if (contentsChanged && hasRows && (stickToBottom || isNearBottom())) {
+        val atBottom = stickToBottom || isNearBottom()
+        val rows = adapter.currentList
+        val mineTail = rows.lastOrNull()?.message?.isFromMe == true && rows.lastOrNull()?.message?.messageId != tailMessageId
+        if (contentsChanged && hasRows) noteIncoming(rows, atBottom)
+        if (contentsChanged && hasRows && (atBottom || mineTail)) {
             binding.messages.scrollToPosition(adapter.itemCount - 1)
+            jumpUnread = 0
         }
+        binding.messages.post { updateJumpButton() }
     }
 
     private fun headerTarget() = AvatarTarget(
