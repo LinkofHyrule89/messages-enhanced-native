@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.11
+
+- New setting "Show deleted message placeholders" (off by default, saved on this device). When it is on, a message its sender deleted for everyone shows as an italic "This message was deleted" bubble with the sender and time. The deleted text is never kept or shown. When it is off, deleted messages disappear as before.
+
 ## v0.7.10
 
 - A message its sender deleted for everyone now stays in the thread as "This message was deleted" instead of disappearing.

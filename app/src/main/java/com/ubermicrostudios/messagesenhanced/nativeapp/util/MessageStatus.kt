@@ -51,6 +51,10 @@ object MessageStatus {
     /** Deleted for everyone by its sender (libgm MESSAGE_DELETED = 300). */
     fun isDeleted(status: String): Boolean = status.trim().uppercase() == "MESSAGE_DELETED"
 
+    /** Deleted-for-everyone rows are hidden unless the placeholder setting is on. */
+    fun visibleMessages(messages: List<MessageDto>, showDeleted: Boolean): List<MessageDto> =
+        if (showDeleted) messages else messages.filterNot { isDeleted(it.status) }
+
     /** Our own "delete for everyone" still waiting on Google. */
     fun isRevoking(status: String): Boolean = status.trim().uppercase().contains("REVOCATION")
 

@@ -16,4 +16,10 @@ class DeletedEditedTest {
         assertEquals("Edited", MessageStatus.bubbleLabel(MessageDto(messageId = "s3", body = "synthetic", status = "INCOMING_COMPLETE", edited = true)))
         assertEquals("", MessageStatus.bubbleLabel(MessageDto(messageId = "s4", body = "synthetic", status = "INCOMING_COMPLETE")))
     }
+
+    @Test fun deletedHiddenUnlessSettingOn() {
+        val list = listOf(MessageDto(messageId = "a", body = "synthetic"), MessageDto(messageId = "b", status = "MESSAGE_DELETED"))
+        assertEquals(1, MessageStatus.visibleMessages(list, false).size)
+        assertEquals(2, MessageStatus.visibleMessages(list, true).size)
+    }
 }

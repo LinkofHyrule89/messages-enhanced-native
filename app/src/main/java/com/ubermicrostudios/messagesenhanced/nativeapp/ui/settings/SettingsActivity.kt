@@ -31,6 +31,7 @@ import javax.inject.Inject
 class SettingsActivity : SessionActivity() {
 
     @Inject lateinit var updateChecker: UpdateChecker
+    @Inject lateinit var appPrefs: com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.AppPreferences
 
     private lateinit var binding: ActivitySettingsBinding
     private lateinit var updatePrompts: UpdatePrompts
@@ -64,6 +65,8 @@ class SettingsActivity : SessionActivity() {
         binding.serverUrl.setText(initial.serverUrl)
         binding.notifications.isChecked = initial.notifications
         binding.hideText.isChecked = initial.hideText
+        binding.showDeleted.isChecked = appPrefs.showDeletedPlaceholders
+        binding.showDeleted.setOnCheckedChangeListener { _, checked -> appPrefs.showDeletedPlaceholders = checked }
         binding.version.text = getString(R.string.app_version, initial.version)
 
         binding.serverUrl.doAfterTextChanged { viewModel.onServerUrl(it?.toString().orEmpty()) }

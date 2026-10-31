@@ -98,6 +98,11 @@ class AppPreferences @Inject constructor(
         settings.edit { putInt(KEY_WHATS_NEW_CODE, code) }
     }
 
+    /** Show "This message was deleted" where a sender deleted for everyone. Off by default. */
+    var showDeletedPlaceholders: Boolean
+        get() = settings.getBoolean(KEY_SHOW_DELETED, false)
+        set(value) = settings.edit { putBoolean(KEY_SHOW_DELETED, value) }
+
     var notificationsEnabled: Boolean
         get() = settings.getBoolean(KEY_NOTIFICATIONS, false)
         set(value) = settings.edit { putBoolean(KEY_NOTIFICATIONS, value) }
@@ -180,6 +185,7 @@ class AppPreferences @Inject constructor(
         private const val KEY_COOKIES = "cookies"
         private const val KEY_UPDATE_CHECK_AT = "update_check_at"
         internal const val KEY_AUTO_UPDATE = "auto_update"
+        internal const val KEY_SHOW_DELETED = "show_deleted_placeholders"
         internal const val KEY_RELAUNCH_AFTER_UPDATE = "relaunch_after_update"
         private const val KEY_LAST_CONVERSATION = "last_selected_conversation_id"
         private const val KEY_WHATS_NEW_CODE = "whats_new_version_code"

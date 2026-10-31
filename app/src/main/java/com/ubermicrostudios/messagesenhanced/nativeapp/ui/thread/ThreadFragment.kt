@@ -1,6 +1,7 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread
 
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Mentions
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.MessageStatus
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
@@ -71,6 +72,7 @@ import javax.inject.Inject
 class ThreadFragment : Fragment() {
 
     @Inject lateinit var previews: LinkPreviewCache
+    @Inject lateinit var appPrefs: com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.AppPreferences
 
     private var _binding: FragmentThreadBinding? = null
     private val binding get() = _binding!!
@@ -333,7 +335,8 @@ class ThreadFragment : Fragment() {
 
     private fun render(state: ThreadUiState) {
         binding.title.text = formatPhoneForDisplay(state.title.ifBlank { getString(R.string.thread_title) })
-        val rows = MessageRuns.rows(state.messages, state.isGroup)
+        val shown = MessageStatus.visibleMessages(state.messages, appPrefs.showDeletedPlaceholders)
+        val rows = MessageRuns.rows(shown, state.isGroup)
         val signature = state.messages.joinToString("\n") {
             "${it.messageId}\u0000${it.status}\u0000${it.statusText}\u0000${it.reactions}\u0000${it.edited}\u0000${it.body.hashCode()}"
         }
