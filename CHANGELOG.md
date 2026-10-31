@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.7.14
+
+- Contact cards (vCard): name, numbers and emails, tap to add to contacts.
+- Calendar invites (.ics): title, time and place, tap to add to your calendar.
+- Voice notes: play/pause with a waveform and elapsed/total time.
+- Video and other files: tap to open in a matching app (previously "[attachment]").
+- Stickers show without a bubble behind them.
+- One-time codes get a "Copy code" chip; payment messages get an amount chip.
+- System notices (missed calls, encryption changes, security/verification changes, scam warnings, group changes) show as centered notices instead of message bubbles.
+- RCS business rich cards, carousels and suggested replies/actions render when they arrive.
+- Older RCS location messages render as a location card.
+
 ## v0.7.13
 
 - Shared locations render as a location card (pin, place, "Open in Maps").

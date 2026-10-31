@@ -65,6 +65,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.RichContent
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -74,6 +75,9 @@ import javax.inject.Inject
 class ThreadFragment : Fragment() {
 
     @Inject lateinit var previews: LinkPreviewCache
+    @Inject lateinit var http: okhttp3.OkHttpClient
+    private var voicePlayer: android.media.MediaPlayer? = null
+    private var voiceJob: kotlinx.coroutines.Job? = null
     @Inject lateinit var appPrefs: com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.AppPreferences
 
     private var _binding: FragmentThreadBinding? = null
@@ -238,11 +242,12 @@ class ThreadFragment : Fragment() {
                         .setNegativeButton(R.string.cancel, null)
                         .setPositiveButton(android.R.string.ok) { _, _ -> viewModel.messageAction(message.messageId, "resend") }
                         .show()
-                } else {
+                } else if (!richAction(message, action)) {
                     viewModel.messageAction(message.messageId, action)
                 }
             },
             animatedEmoji = { appPrefs.animatedEmojis },
+            richText = { message, cb -> fetchRichText(message, cb) },
         )
         gestures = ThreadGestures(
             recyclerView = binding.messages,
@@ -1233,7 +1238,143 @@ class ThreadFragment : Fragment() {
         }
     }
 
+    /** Downloads an attachment into the shareable cache (capped size), or null. */
+    private suspend fun attachmentFile(message: MessageDto): File? = withContext(Dispatchers.IO) {
+        runCatching {
+            val dir = File(requireContext().applicationContext.cacheDir, "share/rich").apply { mkdirs() }
+            val dest = File(dir, RichContent.fileName(message.messageId, message.mimeType, message.body))
+            if (dest.isFile && dest.length() > 0) return@runCatching dest
+            val req = okhttp3.Request.Builder().url(viewModel.baseUrl.mediaUrl(message.messageId)).build()
+            http.newCall(req).execute().use { r ->
+                if (!r.isSuccessful) return@runCatching null
+                val part = File(dir, dest.name + ".part")
+                var total = 0L
+                r.body?.byteStream()?.use { input ->
+                    part.outputStream().use { out ->
+                        val buf = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            total += n
+                            if (total > MessageActions.MAX_MEDIA_BYTES) error("too large")
+                            out.write(buf, 0, n)
+                        }
+                    }
+                } ?: return@runCatching null
+                if (!part.renameTo(dest)) return@runCatching null
+                dest
+            }
+        }.getOrNull()
+    }
+
+    private fun fetchRichText(message: MessageDto, cb: (String?) -> Unit) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val f = attachmentFile(message)
+            val text = f?.takeIf { it.length() <= 512 * 1024 }?.let { withContext(Dispatchers.IO) { runCatching { it.readText() }.getOrNull() } }
+            cb(text)
+        }
+    }
+
+    private fun startSafe(intent: Intent) {
+        runCatching { startActivity(intent) }.onFailure { toast(getString(R.string.rich_open_failed)) }
+    }
+
+    private fun openAttachment(message: MessageDto) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val f = attachmentFile(message) ?: return@launch toast(getString(R.string.rich_open_failed))
+            val ctx = context ?: return@launch
+            val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
+            val type = message.mimeType.ifBlank { "*/*" }.substringBefore(';')
+            startSafe(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(uri, type).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), null))
+        }
+    }
+
+    /** Handles the rich-content actions locally; false lets the server handle it. */
+    private fun richAction(message: MessageDto, action: String): Boolean {
+        when {
+            action.startsWith("copy:") -> {
+                val cm = requireContext().getSystemService(ClipboardManager::class.java)
+                cm?.setPrimaryClip(ClipData.newPlainText("code", action.removePrefix("copy:")))
+                toast(getString(R.string.rich_copied))
+            }
+            action.startsWith("open_url:") -> {
+                val url = action.removePrefix("open_url:")
+                if (url.startsWith("https://", true) || url.startsWith("http://", true) || url.startsWith("tel:", true)) {
+                    startSafe(Intent(if (url.startsWith("tel:", true)) Intent.ACTION_DIAL else Intent.ACTION_VIEW, Uri.parse(url)))
+                }
+            }
+            action.startsWith("reply_text:") -> {
+                val t = action.removePrefix("reply_text:")
+                binding.composer.setText(t)
+                binding.composer.setSelection(t.length)
+                binding.composer.requestFocus()
+            }
+            action == "open_attachment" -> openAttachment(message)
+            action == "add_contact" -> fetchRichText(message) { text ->
+                if (text.isNullOrBlank()) { openAttachment(message); return@fetchRichText }
+                val c = RichContent.vcard(text)
+                val i = Intent(android.provider.ContactsContract.Intents.Insert.ACTION).setType(android.provider.ContactsContract.RawContacts.CONTENT_TYPE)
+                    .putExtra(android.provider.ContactsContract.Intents.Insert.NAME, c.name)
+                c.phones.getOrNull(0)?.let { i.putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, it) }
+                c.phones.getOrNull(1)?.let { i.putExtra(android.provider.ContactsContract.Intents.Insert.SECONDARY_PHONE, it) }
+                c.emails.getOrNull(0)?.let { i.putExtra(android.provider.ContactsContract.Intents.Insert.EMAIL, it) }
+                if (c.org.isNotBlank()) i.putExtra(android.provider.ContactsContract.Intents.Insert.COMPANY, c.org)
+                startSafe(i)
+            }
+            action == "add_event" -> fetchRichText(message) { text ->
+                val e = text?.let { RichContent.ics(it) } ?: run { openAttachment(message); return@fetchRichText }
+                val i = Intent(Intent.ACTION_INSERT).setData(android.provider.CalendarContract.Events.CONTENT_URI)
+                    .putExtra(android.provider.CalendarContract.Events.TITLE, e.title)
+                    .putExtra(android.provider.CalendarContract.Events.EVENT_LOCATION, e.location)
+                    .putExtra(android.provider.CalendarContract.Events.DESCRIPTION, e.description)
+                    .putExtra(android.provider.CalendarContract.EXTRA_EVENT_ALL_DAY, e.allDay)
+                e.startMs?.let { i.putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, it) }
+                e.endMs?.let { i.putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, it) }
+                startSafe(i)
+            }
+            action == "voice" -> toggleVoice(message)
+            else -> return false
+        }
+        return true
+    }
+
+    private fun stopVoice() {
+        voiceJob?.cancel(); voiceJob = null
+        voicePlayer?.runCatching { release() }
+        voicePlayer = null
+    }
+
+    private fun toggleVoice(message: MessageDto) {
+        val p = voicePlayer
+        if (p != null && adapter.voiceId == message.messageId) {
+            if (p.isPlaying) p.pause() else p.start()
+            adapter.setVoiceState(message.messageId, p.isPlaying, p.currentPosition.toFloat() / p.duration.coerceAtLeast(1), p.duration)
+            return
+        }
+        stopVoice()
+        adapter.setVoiceState(message.messageId, false, 0f, 0)
+        viewLifecycleOwner.lifecycleScope.launch {
+            val f = attachmentFile(message) ?: return@launch toast(getString(R.string.rich_open_failed))
+            val mp = runCatching { android.media.MediaPlayer().apply { setDataSource(f.path); prepare() } }.getOrNull()
+                ?: return@launch openAttachment(message)
+            voicePlayer = mp
+            mp.setOnCompletionListener {
+                adapter.setVoiceState(message.messageId, false, 0f, it.duration)
+                voiceJob?.cancel()
+            }
+            mp.start()
+            voiceJob = viewLifecycleOwner.lifecycleScope.launch {
+                while (true) {
+                    val cur = voicePlayer ?: break
+                    if (cur.isPlaying) adapter.setVoiceState(message.messageId, true, cur.currentPosition.toFloat() / cur.duration.coerceAtLeast(1), cur.duration)
+                    kotlinx.coroutines.delay(250)
+                }
+            }
+        }
+    }
+
     override fun onDestroyView() {
+        stopVoice()
         mentionPopup?.dismiss()
         mentionPopup = null
         if (serverErrorShown == true) {

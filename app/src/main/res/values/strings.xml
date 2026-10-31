@@ -226,4 +226,16 @@
     <string name="forget_google_session">Forget saved Google session</string>
     <string name="forget_google_session_confirm">Forget the saved Google session on the server? You will need to sign in again to reconnect.</string>
     <string name="reconnect_continue">I\'ve signed in — Continue</string>
+    <string name="rich_copy_code">⧉  Copy code %1$s</string>
+    <string name="rich_contact">Contact card</string>
+    <string name="rich_add_contact">Tap to add to contacts</string>
+    <string name="rich_event">Calendar invite</string>
+    <string name="rich_add_event">Tap to add to calendar</string>
+    <string name="rich_location">Shared location</string>
+    <string name="rich_open_maps">Open in Maps</string>
+    <string name="rich_card">Business message</string>
+    <string name="rich_video">Video · tap to play</string>
+    <string name="rich_file">Attachment · tap to open</string>
+    <string name="rich_copied">Copied</string>
+    <string name="rich_open_failed">Couldn\'t open this attachment</string>
 </resources>

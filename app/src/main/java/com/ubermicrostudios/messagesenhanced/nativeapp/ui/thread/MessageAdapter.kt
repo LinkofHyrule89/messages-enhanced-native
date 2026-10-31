@@ -54,6 +54,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ReceiptKind
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ReadReceipts
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.SharedLocation
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.RichContent
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ReplyTexts
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ThemeColors
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
@@ -74,6 +75,8 @@ class MessageAdapter(
     private val onImage: (MessageDto) -> Unit,
     private val onMessageAction: (MessageDto, String) -> Unit = { _, _ -> },
     private val animatedEmoji: () -> Boolean = { true },
+    /** Fetches a small text attachment (vCard, .ics, location push, rich card JSON). */
+    private val richText: (MessageDto, (String?) -> Unit) -> Unit = { _, cb -> cb(null) },
 ) : ListAdapter<MessageRuns.Row, RecyclerView.ViewHolder>(Diff) {
 
     var starredIds: Set<String> = emptySet()
@@ -108,11 +111,76 @@ class MessageAdapter(
     override fun getItemId(position: Int): Long =
         RecyclerIds.of(1, getItem(position).message.messageId)
 
-    override fun getItemViewType(position: Int): Int =
-        if (getItem(position).message.isFromMe) TYPE_ME else TYPE_THEM
+    override fun getItemViewType(position: Int): Int {
+        val m = getItem(position).message
+        return when {
+            RichContent.isNotice(m.status) && RichContent.notice(m.status, m.body) != null -> TYPE_SYSTEM
+            m.isFromMe -> TYPE_ME
+            else -> TYPE_THEM
+        }
+    }
+
+    private val richCache = HashMap<String, String>()
+    private val richPending = HashSet<String>()
+
+    /** Voice note playback state, driven by the fragment. */
+    var voiceId: String = ""
+        private set
+    private var voiceProgress = 0f
+    private var voicePlaying = false
+    private var voiceDurationMs = 0
+    private val voiceDurations = HashMap<String, Int>()
+
+    fun setVoiceState(id: String, playing: Boolean, progress: Float, durationMs: Int) {
+        val old = voiceId
+        voiceId = id; voicePlaying = playing; voiceProgress = progress; voiceDurationMs = durationMs
+        if (id.isNotBlank() && durationMs > 0) voiceDurations[id] = durationMs
+        listOf(old, id).filter { it.isNotBlank() }.distinct().forEach { mid ->
+            val pos = currentList.indexOfFirst { it.message.messageId == mid }
+            if (pos >= 0) notifyItemChanged(pos)
+        }
+    }
+
+    private fun richTextOf(item: MessageDto): String? {
+        richCache[item.messageId]?.let { return it }
+        if (item.messageId.isBlank() || item.messageId.startsWith("local-") || !richPending.add(item.messageId)) return null
+        richText(item) { text ->
+            richPending.remove(item.messageId)
+            richCache[item.messageId] = text.orEmpty()
+            val pos = currentList.indexOfFirst { it.message.messageId == item.messageId }
+            if (pos >= 0) notifyItemChanged(pos)
+        }
+        return null
+    }
+
+    inner class SystemHolder(val text: TextView) : RecyclerView.ViewHolder(text) {
+        fun bind(row: MessageRuns.Row) {
+            val m = row.message
+            val n = RichContent.notice(m.status, m.body) ?: return
+            val icon = when (n.icon) {
+                "call" -> "\u260E\uFE0F"; "lock" -> "\uD83D\uDD12"; "unlock" -> "\uD83D\uDD13"; "shield" -> "\uD83D\uDEE1\uFE0F"
+                "warn" -> "\u26A0\uFE0F"; "group" -> "\uD83D\uDC65"; "edit" -> "\u270F\uFE0F"; else -> "\u2139\uFE0F"
+            }
+            val clock = Formatters.clockTime(m.timestampMs)
+            text.text = "$icon  ${n.text}" + if (clock.isNotBlank()) "  \u00B7  $clock" else ""
+            text.setTextColor(chrome().colors.light)
+        }
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         val inflater = LayoutInflater.from(parent.context)
+        if (viewType == TYPE_SYSTEM) {
+            val d = parent.resources.displayMetrics.density
+            val tv = TextView(parent.context).apply {
+                layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                gravity = android.view.Gravity.CENTER
+                textAlignment = View.TEXT_ALIGNMENT_CENTER
+                setPadding((24 * d).toInt(), (10 * d).toInt(), (24 * d).toInt(), (10 * d).toInt())
+                textSize = 12f
+                alpha = 0.75f
+            }
+            return SystemHolder(tv)
+        }
         val holder = if (viewType == TYPE_ME) {
             MeHolder(ItemMessageMeBinding.inflate(inflater, parent, false))
         } else {
@@ -135,6 +203,7 @@ class MessageAdapter(
         when (holder) {
             is MeHolder -> holder.bind(row)
             is ThemHolder -> holder.bind(row)
+            is SystemHolder -> holder.bind(row)
         }
     }
 
@@ -331,12 +400,26 @@ class MessageAdapter(
             item.hasAttachment() -> {
                 image.isVisible = false
                 attachment.isVisible = true
-                attachment.text = "[attachment]"
+                bindRichAttachment(item, attachment, body)
             }
             else -> {
                 image.isVisible = false
-                attachment.isVisible = false
+                val chip = if (deleted) "" else RichContent.otp(item.body)
+                val pay = if (deleted || chip.isNotEmpty()) "" else RichContent.payment(item.body)
+                attachment.isVisible = chip.isNotEmpty() || pay.isNotEmpty()
+                if (chip.isNotEmpty()) {
+                    attachment.text = attachment.context.getString(R.string.rich_copy_code, chip)
+                    attachment.setOnClickListener { if (!selecting) onMessageAction(item, "copy:$chip") }
+                } else if (pay.isNotEmpty()) {
+                    attachment.text = "\uD83D\uDCB3  $pay"
+                    attachment.setOnClickListener { if (!selecting) onMessageAction(item, "copy:$pay") }
+                }
             }
+        }
+        // Stickers: no bubble behind the image.
+        if (image.isVisible && emojis == null && (item.mimeType.contains("webp", true) || item.body.trim().equals("[Sticker]", true))) {
+            bubble.background = null
+            if (item.body.trim().equals("[Sticker]", true)) body.isVisible = false
         }
 
         bindLink(item.body, linkCard, linkImage, linkSite, linkTitle, linkDesc)
@@ -349,6 +432,111 @@ class MessageAdapter(
         }
         image.isClickable = image.isVisible && emojis == null
         reactions.isClickable = reactions.isVisible
+    }
+
+    private fun bindRichAttachment(item: MessageDto, attachment: TextView, body: TextView) {
+        val ctx = attachment.context
+        val kind = RichContent.kind(item.mimeType, item.body)
+        val generic = item.body.isBlank() || item.body.trim().startsWith("[") || item.body.trim() == item.body.trim().substringAfterLast('/') && '.' in item.body
+        fun hideGenericBody() { if (generic) body.isVisible = false }
+        fun tap(action: String) = attachment.setOnClickListener { if (!selecting) onMessageAction(item, action) }
+        when (kind) {
+            RichContent.Kind.VCARD -> {
+                hideGenericBody()
+                val c = richTextOf(item)?.takeIf { it.isNotBlank() }?.let { RichContent.vcard(it) }
+                attachment.text = if (c == null) "\uD83D\uDC64  " + ctx.getString(R.string.rich_contact)
+                else (listOf("\uD83D\uDC64  ${c.name}") + c.phones.take(3).map(::formatPhoneForDisplay) + c.emails.take(2) +
+                    ctx.getString(R.string.rich_add_contact)).joinToString("\n")
+                tap("add_contact")
+            }
+            RichContent.Kind.ICS -> {
+                hideGenericBody()
+                val e = richTextOf(item)?.takeIf { it.isNotBlank() }?.let { RichContent.ics(it) }
+                attachment.text = if (e == null) "\uD83D\uDCC5  " + ctx.getString(R.string.rich_event)
+                else listOfNotNull(
+                    "\uD83D\uDCC5  ${e.title}",
+                    e.startMs?.let {
+                        val f = if (e.allDay) java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM)
+                        else java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT)
+                        f.format(java.util.Date(it))
+                    },
+                    e.location.ifBlank { null },
+                    ctx.getString(R.string.rich_add_event),
+                ).joinToString("\n")
+                tap("add_event")
+            }
+            RichContent.Kind.PUSH_LOCATION -> {
+                hideGenericBody()
+                val loc = richTextOf(item)?.let { RichContent.pushLocation(it) }
+                attachment.text = "\uD83D\uDCCD  " + (loc?.label?.ifBlank { null } ?: ctx.getString(R.string.rich_location)) + "\n" + ctx.getString(R.string.rich_open_maps)
+                if (loc != null) tap("open_url:${loc.url}")
+            }
+            RichContent.Kind.RICH_CARD -> {
+                hideGenericBody()
+                val r = richTextOf(item)?.let { RichContent.richCard(it) }
+                if (r == null) {
+                    attachment.text = "\uD83D\uDCAC  " + ctx.getString(R.string.rich_card)
+                    return
+                }
+                val lines = ArrayList<String>()
+                r.cards.forEachIndexed { i, c ->
+                    if (i > 0) lines.add("\u2014")
+                    if (c.title.isNotBlank()) lines.add(c.title)
+                    if (c.description.isNotBlank()) lines.add(c.description)
+                    c.suggestions.forEach { lines.add("\u203A ${it.text}") }
+                }
+                r.suggestions.forEach { lines.add("\u203A ${it.text}") }
+                attachment.text = lines.joinToString("\n")
+                val all = r.cards.flatMap { it.suggestions } + r.suggestions
+                attachment.setOnClickListener { v ->
+                    if (selecting || all.isEmpty()) return@setOnClickListener
+                    val menu = android.widget.PopupMenu(v.context, v)
+                    all.forEachIndexed { i, sug -> menu.menu.add(0, i, i, sug.text) }
+                    menu.setOnMenuItemClickListener { mi ->
+                        val sug = all[mi.itemId]
+                        onMessageAction(item, if (sug.href.isNotBlank()) "open_url:${sug.href}" else "reply_text:${sug.text}")
+                        true
+                    }
+                    menu.show()
+                }
+            }
+            RichContent.Kind.AUDIO -> {
+                hideGenericBody()
+                val mine = voiceId == item.messageId
+                val progress = if (mine) voiceProgress else 0f
+                val dur = if (mine && voiceDurationMs > 0) voiceDurationMs else voiceDurations[item.messageId] ?: 0
+                attachment.text = voiceText(item.messageId, mine && voicePlaying, progress, dur)
+                tap("voice")
+            }
+            RichContent.Kind.VIDEO -> {
+                hideGenericBody()
+                attachment.text = "\uD83C\uDFAC  " + ctx.getString(R.string.rich_video)
+                tap("open_attachment")
+            }
+            else -> {
+                val name = item.body.trim().takeIf { generic && it.isNotBlank() && !it.startsWith("[") }
+                hideGenericBody()
+                attachment.text = "\uD83D\uDCCE  " + (name ?: ctx.getString(R.string.rich_file))
+                tap("open_attachment")
+            }
+        }
+    }
+
+    private fun voiceText(id: String, playing: Boolean, progress: Float, durationMs: Int): CharSequence {
+        val bars = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587"
+        var seed = id.hashCode().toLong() and 0xffffffffL
+        val wave = StringBuilder()
+        repeat(24) {
+            seed = (seed * 1103515245L + 12345L) and 0x7fffffffL
+            wave.append(bars[((seed shr 16) % bars.length).toInt()])
+        }
+        val played = (progress.coerceIn(0f, 1f) * wave.length).toInt()
+        fun mmss(ms: Int) = "%d:%02d".format(ms / 60000, (ms / 1000) % 60)
+        val time = if (durationMs > 0) "  ${mmss((durationMs * progress).toInt())} / ${mmss(durationMs)}" else ""
+        val head = if (playing) "\u23F8  " else "\u25B6\uFE0F  "
+        val sb = android.text.SpannableStringBuilder(head).append(wave).append(time)
+        if (played < wave.length) sb.setSpan(android.text.style.ForegroundColorSpan(0x66FFFFFF), head.length + played, head.length + wave.length, 0)
+        return sb
     }
 
     private fun bindTapDetail(
@@ -725,6 +913,7 @@ class MessageAdapter(
         private val MMS_DOWNLOAD = Regex("INCOMING_YET_TO_MANUAL_DOWNLOAD|INCOMING_DOWNLOAD_FAILED|INCOMING_DOWNLOAD_CANCELED|INCOMING_EXPIRED_OR_NOT_AVAILABLE")
         private const val TYPE_ME = 1
         private const val TYPE_THEM = 2
+        private const val TYPE_SYSTEM = 3
     }
 }
 
