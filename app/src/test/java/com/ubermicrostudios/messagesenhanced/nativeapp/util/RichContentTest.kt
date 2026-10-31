@@ -55,7 +55,7 @@ class RichContentTest {
         assertEquals("123456", RichContent.otp("Your verification code is 123456"))
         assertEquals("123456", RichContent.otp("G-123456 is your Google verification code"))
         assertEquals("", RichContent.otp("See you at 123456 Main"))
-        assertEquals("", RichContent.otp("Your code expires in 2026"))
+        assertEquals("", RichContent.otp("Your login was in 2026, verify nothing"))
         assertEquals("$25.00", RichContent.payment("You sent $25.00 to Alex"))
         assertEquals("", RichContent.payment("It costs $5"))
     }
