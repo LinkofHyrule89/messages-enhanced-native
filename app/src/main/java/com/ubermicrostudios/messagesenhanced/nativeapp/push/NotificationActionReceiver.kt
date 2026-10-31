@@ -55,12 +55,17 @@ class NotificationActionReceiver : BroadcastReceiver() {
                     await(context.applicationContext, pending, workId)
                 }
             }
-            NotificationActions.ACTION_REPLY -> {
-                val text = RemoteInput.getResultsFromIntent(intent)
-                    ?.getCharSequence(NotificationActions.KEY_REPLY)
-                    ?.toString()
-                    ?.trim()
-                    .orEmpty()
+            NotificationActions.ACTION_REPLY, NotificationActions.ACTION_RETRY -> {
+                val text = (
+                    if (intent.action == NotificationActions.ACTION_RETRY) {
+                        intent.getStringExtra(NotificationActions.EXTRA_TEXT)
+                    } else {
+                        RemoteInput.getResultsFromIntent(intent)
+                            ?.getCharSequence(NotificationActions.KEY_REPLY)
+                            ?.toString()
+                    }
+                    )?.trim().orEmpty()
+                if (intent.action == NotificationActions.ACTION_RETRY) notifications.clearReplyFailed(conv)
                 if (text.isBlank()) return
                 val title = intent.getStringExtra(NotificationActions.EXTRA_TITLE).orEmpty()
                 val group = intent.getBooleanExtra(NotificationActions.EXTRA_GROUP, false)
@@ -78,7 +83,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                         } catch (e: CancellationException) {
                             throw e
                         } catch (_: Exception) {
-                            notifications.showReplyFailed(conv, title)
+                            notifications.showReplyFailed(conv, title, text, group)
                         } finally {
                             pending.finish()
                         }
@@ -112,6 +117,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
     }
 
     private companion object {
-        const val WAIT_MS = 25_000L
+        // Stay under the broadcast ANR budget; the queued work survives without us.
+        const val WAIT_MS = 9_000L
     }
 }

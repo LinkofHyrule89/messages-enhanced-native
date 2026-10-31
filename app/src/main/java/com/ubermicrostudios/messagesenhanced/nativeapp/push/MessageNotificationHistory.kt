@@ -163,6 +163,7 @@ object MessageNotificationIds {
     const val SLOT_DELETE = 4
     const val SLOT_ERROR = 5
     const val SLOT_SUMMARY = 6
+    const val SLOT_RETRY = 7
 
     const val RANGE_START = 20_000
     const val RANGE_SPAN = 1_000_003

@@ -2,6 +2,9 @@
 
 ## v0.7.13
 
+- Shared locations render as a location card (pin, place, "Open in Maps").
+- Notification Reply is more reliable: the reply waits for a network connection, retries with backoff without double-sending, and on final failure shows "Failed to send, tap to retry". A sent reply is added to the notification.
+- Read receipts in one-to-one chats show the reader's photo (or initials) instead of two plain blue circles; group readers are deduplicated.
 - Per-conversation drafts: text you type is saved automatically for that chat. Switching to another chat or group shows its own draft or an empty box, and coming back restores yours, mentions included. Drafts are kept only on this device (they survive restarts and never go to the server) and clear when you send or erase the text. Unsent photos and files are not kept in drafts.
 - The chat list shows "Draft: ..." for chats with an unsent draft, like Google Messages.
 - Sharing text into a chat that already has a draft adds the shared text on a new line instead of replacing the draft.

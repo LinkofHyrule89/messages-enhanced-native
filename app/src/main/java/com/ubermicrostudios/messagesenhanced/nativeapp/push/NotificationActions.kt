@@ -6,7 +6,9 @@ object NotificationActions {
     const val ACTION_READ = "com.ubermicrostudios.messagesenhanced.nativeapp.NOTIF_READ"
     const val ACTION_DISMISSED = "com.ubermicrostudios.messagesenhanced.nativeapp.NOTIF_DISMISSED"
 
+    const val ACTION_RETRY = "com.ubermicrostudios.messagesenhanced.nativeapp.NOTIF_RETRY"
     const val EXTRA_CONV = "conv"
+    const val EXTRA_TEXT = "text"
     const val EXTRA_TITLE = "title"
     const val EXTRA_GROUP = "group"
 

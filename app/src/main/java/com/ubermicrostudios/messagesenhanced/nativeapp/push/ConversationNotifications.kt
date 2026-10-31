@@ -154,24 +154,68 @@ class ConversationNotifications @Inject constructor(
         }
     }
 
-    fun showReplyFailed(conversationId: String, title: String) {
+    /**
+     * Posts "Failed to send, tap to retry". Tapping re-queues the same text; the
+     * conversation notification is re-posted so the shade's reply spinner stops.
+     */
+    suspend fun showReplyFailed(conversationId: String, title: String, text: String = "", isGroup: Boolean = false) {
         if (conversationId.isBlank() || !MessagingService.notificationsGranted(context)) return
         val name = title.ifBlank {
             store.snapshot().firstOrNull { it.conversationId == conversationId }?.title.orEmpty()
         }
         val where = formatPhoneForDisplay(name).ifBlank { context.getString(R.string.app_name) }
         MessagingService.ensureChannels(context)
-        val notification = NotificationCompat.Builder(context, MessagingService.CHANNEL_MESSAGES)
+        val tap = if (text.isNotBlank()) {
+            val intent = Intent(context, NotificationActionReceiver::class.java).apply {
+                action = NotificationActions.ACTION_RETRY
+                putExtra(NotificationActions.EXTRA_CONV, conversationId)
+                putExtra(NotificationActions.EXTRA_TITLE, title)
+                putExtra(NotificationActions.EXTRA_GROUP, isGroup)
+                putExtra(NotificationActions.EXTRA_TEXT, text.take(4000))
+            }
+            PendingIntent.getBroadcast(
+                context,
+                MessageNotificationIds.requestCode(conversationId, MessageNotificationIds.SLOT_RETRY),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        } else {
+            openThread(conversationId, MessageNotificationIds.SLOT_ERROR)
+        }
+        val body = if (text.isNotBlank()) "$where: ${text.take(120)}" else where
+        val builder = NotificationCompat.Builder(context, MessagingService.CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(ContextCompat.getColor(context, R.color.accent))
-            .setContentTitle(context.getString(R.string.notif_reply_failed))
-            .setContentText(where)
+            .setContentTitle(context.getString(if (text.isNotBlank()) R.string.notif_reply_failed_retry else R.string.notif_reply_failed))
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_ERROR)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setContentIntent(openThread(conversationId, MessageNotificationIds.SLOT_ERROR))
-            .build()
-        notify(MessageNotificationIds.replyErrorId(conversationId), notification)
+            .setContentIntent(tap)
+        if (text.isNotBlank()) {
+            builder.addAction(
+                R.drawable.ic_notification,
+                context.getString(R.string.notif_open_chat),
+                openThread(conversationId, MessageNotificationIds.SLOT_ERROR),
+            )
+        }
+        notify(MessageNotificationIds.replyErrorId(conversationId), builder.build())
+        repost(conversationId)
+    }
+
+    fun clearReplyFailed(conversationId: String) {
+        NotificationManagerCompat.from(context).cancel(MessageNotificationIds.replyErrorId(conversationId))
+    }
+
+    /** Re-posts a conversation notification silently (clears a pending inline-reply spinner). */
+    private suspend fun repost(conversationId: String) {
+        val thread = store.snapshot().firstOrNull { it.conversationId == conversationId } ?: return
+        val icons = loadIcons(iconUrls(thread))
+        synchronized(postLock) {
+            val fresh = store.snapshot().firstOrNull { it.conversationId == conversationId } ?: return@synchronized
+            postConversation(fresh, icons, silent = true)
+        }
     }
 
     private fun postConversation(thread: NotifThread, icons: Map<String, Bitmap>, silent: Boolean) {

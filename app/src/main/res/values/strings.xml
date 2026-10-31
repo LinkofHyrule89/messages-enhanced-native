@@ -55,6 +55,10 @@
     <string name="notif_reply">Reply</string>
     <string name="notif_mark_read">Mark as read</string>
     <string name="notif_reply_failed">Couldn\'t send reply</string>
+    <string name="notif_reply_failed_retry">Failed to send, tap to retry</string>
+    <string name="notif_open_chat">Open chat</string>
+    <string name="shared_location">Shared location</string>
+    <string name="open_in_maps">Open in Maps</string>
     <string name="notif_you">You</string>
     <string name="notif_sending_reply">Sending reply</string>
     <string name="notif_summary_one">1 conversation</string>

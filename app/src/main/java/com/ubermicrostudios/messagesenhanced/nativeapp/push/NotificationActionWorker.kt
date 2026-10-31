@@ -16,6 +16,12 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.R
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.IdempotencyKeys
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.CancellationException
+import retrofit2.HttpException
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import java.util.concurrent.TimeUnit
 import java.util.UUID
 
 /**
@@ -55,20 +61,41 @@ class NotificationActionWorker(
     private suspend fun reply(entry: NotificationWorkerEntryPoint, conv: String): Result {
         val text = inputData.getString(KEY_TEXT).orEmpty()
         if (text.isBlank()) return Result.failure()
-        val key = inputData.getString(KEY_IDEMPOTENCY).orEmpty().ifBlank { IdempotencyKeys.newKey() }
+        val base = inputData.getString(KEY_IDEMPOTENCY).orEmpty().ifBlank { IdempotencyKeys.newKey() }
         val title = inputData.getString(KEY_TITLE).orEmpty()
         val group = inputData.getBoolean(KEY_GROUP, false)
         val timestamp = inputData.getLong(KEY_TS, System.currentTimeMillis())
         val notifications = entry.conversationNotifications()
-        return try {
-            entry.messagesRepository().send(conv, text, idempotencyKey = key)
-            notifications.appendSelfAndPost(conv, text, timestamp, title, group)
-            Result.success()
+        val gens = applicationContext.getSharedPreferences(GEN_PREFS, Context.MODE_PRIVATE)
+        val generation = gens.getInt(base, 0)
+        val key = ReplyPolicy.keyFor(base, generation)
+        val outcome = try {
+            val res = entry.messagesRepository().send(conv, text, idempotencyKey = key)
+            ReplyPolicy.decide(200, res.success, res.status, runAttemptCount)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: HttpException) {
+            val body = runCatching { e.response()?.errorBody()?.string() }.getOrNull()
+            ReplyPolicy.decide(e.code(), false, ReplyPolicy.parseStatus(body), runAttemptCount)
         } catch (_: Exception) {
-            notifications.showReplyFailed(conv, title)
-            Result.failure()
+            ReplyPolicy.decide(null, null, null, runAttemptCount)
+        }
+        return when (outcome) {
+            ReplyPolicy.Outcome.SENT -> {
+                gens.edit().remove(base).apply()
+                notifications.appendSelfAndPost(conv, text, timestamp, title, group)
+                Result.success()
+            }
+            ReplyPolicy.Outcome.RETRY_SAME_KEY -> Result.retry()
+            ReplyPolicy.Outcome.RETRY_NEW_KEY -> {
+                gens.edit().putInt(base, generation + 1).commit()
+                Result.retry()
+            }
+            ReplyPolicy.Outcome.GIVE_UP -> {
+                gens.edit().remove(base).apply()
+                notifications.showReplyFailed(conv, title, text, group)
+                Result.failure()
+            }
         }
     }
 
@@ -95,6 +122,7 @@ class NotificationActionWorker(
         private const val KEY_GROUP = "group"
         private const val KEY_TS = "ts"
         private const val KEY_IDEMPOTENCY = "idempotency"
+        private const val GEN_PREFS = "notif_reply_generations"
 
         fun enqueueReply(
             context: Context,
@@ -103,11 +131,16 @@ class NotificationActionWorker(
             title: String,
             isGroup: Boolean,
         ): UUID {
+            val data = replyData(conversationId, text, title, isGroup)
             val request = OneTimeWorkRequestBuilder<NotificationActionWorker>()
-                .setInputData(replyData(conversationId, text, title, isGroup))
+                .setInputData(data)
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS)
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .build()
-            WorkManager.getInstance(context.applicationContext).enqueue(request)
+            val unique = "notif-reply:" + data.getString(KEY_IDEMPOTENCY)
+            WorkManager.getInstance(context.applicationContext)
+                .enqueueUniqueWork(unique, ExistingWorkPolicy.KEEP, request)
             return request.id
         }
 

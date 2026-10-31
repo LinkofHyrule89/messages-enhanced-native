@@ -52,6 +52,8 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.util.MessageRuns
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.MessageStatus
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ReceiptKind
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.ReadReceipts
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.SharedLocation
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ReplyTexts
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ThemeColors
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
@@ -513,7 +515,7 @@ class MessageAdapter(
         receipt.isVisible = true
         val conv = conversation()
         val names = if (conv.isGroup && kind != ReceiptKind.FAILED && kind != ReceiptKind.SENDING) {
-            MessageStatus.readByNames(row.message.statusText)
+            MessageStatus.readByNames(row.message.statusText)?.let { ReadReceipts.dedupe(it) }
         } else {
             null
         }
@@ -534,6 +536,18 @@ class MessageAdapter(
             return
         }
         label.isVisible = false
+        if (kind == ReceiptKind.READ && !conv.isGroup) {
+            // 1:1: one face (photo, or initials while/if it fails) instead of the generic dot pair.
+            val other = Participants.otherMembers(conv).firstOrNull()
+            val name = other?.name?.ifBlank { other.number }?.ifBlank { conv.name }.orEmpty().ifBlank { conv.name }
+            if (name.isNotBlank()) {
+                icon.isVisible = false
+                val density = avatars.resources.displayMetrics.density
+                avatars.addView(readByChip(avatars, other, name, (16 * density).toInt(), (2 * density).toInt(), 0))
+                avatars.contentDescription = displayReadBy(row.message.statusText.ifBlank { kind.label })
+                return
+            }
+        }
         icon.isVisible = true
         icon.setImageResource(kind.icon())
         val tint = if (kind == ReceiptKind.READ) look.colors.accent else kind.tint(icon.context)
@@ -550,6 +564,27 @@ class MessageAdapter(
     }
 
     private fun linkify(view: TextView, text: String, linkColor: Int) {
+        val loc = SharedLocation.parse(text)
+        if (loc != null) {
+            // Location card: pin, place text, opens Maps on tap.
+            val head = "\uD83D\uDCCD " + view.context.getString(R.string.shared_location)
+            val sb = SpannableStringBuilder(head)
+            sb.setSpan(android.text.style.StyleSpan(Typeface.BOLD), 0, head.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (loc.label.isNotBlank()) sb.append("\n").append(loc.label)
+            val tail = "\n" + view.context.getString(R.string.open_in_maps)
+            val start = sb.length
+            sb.append(tail)
+            sb.setSpan(android.text.style.UnderlineSpan(), start + 1, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            view.text = sb
+            view.movementMethod = null
+            view.setOnClickListener {
+                runCatching { it.context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(loc.url))) }
+                    .onFailure { _ -> Toast.makeText(it.context, R.string.link_open_failed, Toast.LENGTH_SHORT).show() }
+            }
+            return
+        }
+        view.setOnClickListener(null)
+        view.isClickable = false
         val parts = LinkUrls.parts(text)
         val mentions = Mentions.ranges(text)
         if (parts.none { it.url != null }) {
