@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.17
+
+- Link previews fill the bubble edge to edge: tall/portrait images and video posts (e.g. X) no longer show grey side bars; height follows the image, capped at ~60% of the screen (400dp), cropping minimally past the cap.
+- Video link previews (YouTube, X videos) show a play button over the thumbnail.
+- YouTube previews always show (server now uses YouTube oEmbed + thumbnail instead of the watch page).
+- Long-press on a link preview opens the message menu (reactions, reply, copy, etc.); tap still opens the link.
+
 ## v0.7.16
 
 - Reply quotes size to their own content (one line, or up to 3 lines when long) and the bubble widens to fit; short replies like "Oh nice" no longer squeeze the quote (v0.7.8 rule restored).

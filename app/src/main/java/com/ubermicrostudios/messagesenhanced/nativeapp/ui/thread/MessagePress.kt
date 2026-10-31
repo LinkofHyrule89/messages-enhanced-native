@@ -40,6 +40,8 @@ class MessagePress(
     private var selectDownX = 0f
     private var selectDownY = 0f
     private var selectMoved = false
+    /** Long-press fired: swallow the rest of the gesture so the link card's tap doesn't open the link. */
+    private var fired = false
 
     private val fire = Runnable {
         if (!tracking || claimed() || selecting() || sheetOpen()) return@Runnable
@@ -47,6 +49,7 @@ class MessagePress(
         val item = message ?: return@Runnable
         if (!MessageActions.canOpenMenu(item, selecting = false)) return@Runnable
         tracking = false
+        fired = true
         buzz()
         onLongPress(target, item)
     }
@@ -62,6 +65,10 @@ class MessagePress(
 
     override fun onInterceptTouchEvent(rv: RecyclerView, event: MotionEvent): Boolean {
         if (selecting()) return selectionTap(event)
+        if (fired) {
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) fired = false
+            return true
+        }
         if (sheetOpen()) return false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> start(event)
@@ -83,7 +90,9 @@ class MessagePress(
         return false
     }
 
-    override fun onTouchEvent(rv: RecyclerView, event: MotionEvent) = Unit
+    override fun onTouchEvent(rv: RecyclerView, event: MotionEvent) {
+        if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) fired = false
+    }
 
     /** A short tap toggles the row. A drag keeps scrolling. */
     private fun selectionTap(event: MotionEvent): Boolean {
@@ -112,8 +121,10 @@ class MessagePress(
 
     private fun start(event: MotionEvent) {
         cancel()
+        fired = false
         if (event.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE) return
-        if (excluded(event)) return
+        // Link previews open on tap but still take a long-press (like the phone app).
+        if (excluded(event, LONG_PRESS_EXCLUDE)) return
         val hit = bubbleAt(event) ?: return
         val item = hit.second
         if (!MessageActions.canOpenMenu(item, selecting = false)) return
@@ -140,9 +151,9 @@ class MessagePress(
         onToggle(id)
     }
 
-    private fun excluded(event: MotionEvent): Boolean {
+    private fun excluded(event: MotionEvent, ids: IntArray = EXCLUDE): Boolean {
         val row = recyclerView.findChildViewUnder(event.x, event.y) ?: return false
-        for (id in EXCLUDE) {
+        for (id in ids) {
             val child = row.findViewById<View>(id) ?: continue
             if (child.visibility != View.VISIBLE) continue
             if (hit(child, event)) return true
@@ -198,6 +209,11 @@ class MessagePress(
         private val EXCLUDE = intArrayOf(
             R.id.image,
             R.id.link_card,
+            R.id.reply_quote,
+            R.id.reactions,
+        )
+        private val LONG_PRESS_EXCLUDE = intArrayOf(
+            R.id.image,
             R.id.reply_quote,
             R.id.reactions,
         )

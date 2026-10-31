@@ -403,6 +403,9 @@ data class LinkPreviewDto(
     @SerialName("site_name") val siteName: String = "",
     @SerialName("icon_url") val iconUrl: String = "",
     val domain: String = "",
+    @SerialName("is_video") val isVideo: Boolean = false,
+    @SerialName("image_width") val imageWidth: Int = 0,
+    @SerialName("image_height") val imageHeight: Int = 0,
 ) {
     fun usable(): Boolean =
         title.isNotBlank() || description.isNotBlank() || imageUrl.isNotBlank() || siteName.isNotBlank()

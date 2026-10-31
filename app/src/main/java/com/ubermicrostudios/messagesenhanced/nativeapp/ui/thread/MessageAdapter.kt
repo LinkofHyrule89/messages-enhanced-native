@@ -757,12 +757,36 @@ class MessageAdapter(
             image.isVisible = true
             // Full image, never cropped: fit the bubble width, cap at ~60% of the screen / 400dp.
             val dm = image.resources.displayMetrics
-            image.maxHeight = minOf((400 * dm.density).toInt(), (dm.heightPixels * 0.6f).toInt())
-            image.minimumHeight = (120 * dm.density).toInt() // placeholder until it loads
+            // Fill the card width edge to edge (no grey side bars): height follows the
+            // image's aspect, capped; past the cap it crops minimally (centre).
+            val cap = minOf((400 * dm.density).toInt(), (dm.heightPixels * 0.6f).toInt())
+            image.adjustViewBounds = false
+            image.foreground = if (preview.isVideo) ContextCompat.getDrawable(image.context, R.drawable.fg_link_play) else null
+            image.scaleType = ImageView.ScaleType.CENTER_CROP
+            image.maxHeight = Int.MAX_VALUE
+            val ilp = image.layoutParams
+            fun sizeTo(iw: Int, ih: Int) {
+                val w = image.width.takeIf { it > 0 } ?: card.layoutParams?.width?.takeIf { it > 0 } ?: return
+                if (iw <= 0 || ih <= 0) return
+                val h = (w.toLong() * ih / iw).toInt().coerceIn((60 * dm.density).toInt(), cap)
+                if (ilp.height != h) { ilp.height = h; image.layoutParams = ilp }
+            }
+            if (preview.imageWidth > 0 && preview.imageHeight > 0) {
+                image.minimumHeight = 0
+                ilp.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                image.post { sizeTo(preview.imageWidth, preview.imageHeight) }
+            } else {
+                ilp.height = (160 * dm.density).toInt().coerceAtMost(cap) // placeholder until it loads
+                image.minimumHeight = 0
+            }
+            image.layoutParams = ilp
             image.load(picture) {
                 crossfade(true)
                 stableCacheKey(picture)
-                listener(onSuccess = { _, _ -> image.minimumHeight = 0 })
+                listener(onSuccess = { _, result ->
+                    val dr = result.drawable
+                    image.post { sizeTo(dr.intrinsicWidth, dr.intrinsicHeight) }
+                })
             }
         }
         val siteLabel = preview.footerLabel()
