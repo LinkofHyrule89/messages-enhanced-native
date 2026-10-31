@@ -302,6 +302,8 @@ class ThreadFragment : Fragment() {
                             Toast.makeText(requireContext(), effect.text, Toast.LENGTH_SHORT).show()
                         ThreadEffect.Close -> closeThread()
                         ThreadEffect.ListChanged -> setFragmentResult(RESULT_LIST, bundleOf())
+                        is ThreadEffect.ScrollToMessage ->
+                            binding.messages.postDelayed({ if (_binding != null) scrollToQuote(effect.id, findIfMissing = false) }, 150)
                     }
                 }
             }
@@ -449,9 +451,22 @@ class ThreadFragment : Fragment() {
         return range - offset - extent < (200f * list.resources.displayMetrics.density).toInt()
     }
 
-    private fun scrollToQuote(id: String) {
+    private fun scrollToQuote(id: String, findIfMissing: Boolean = true) {
         val index = adapter.currentList.indexOfFirst { it.message.messageId == id }
-        if (index < 0) return
+        if (index < 0) {
+            if (findIfMissing) viewModel.findOriginal(id)
+            else Toast.makeText(requireContext(), "Message not available", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val lm = binding.messages.layoutManager as? LinearLayoutManager
+        // Far away: jump near it first so the smooth scroll is short and actually lands.
+        if (lm != null) {
+            val first = lm.findFirstVisibleItemPosition()
+            val last = lm.findLastVisibleItemPosition()
+            if (first >= 0 && (index < first - 30 || index > last + 30)) {
+                lm.scrollToPositionWithOffset(if (index < first) minOf(index + 6, adapter.itemCount - 1) else maxOf(index - 6, 0), 0)
+            }
+        }
         val layout = binding.messages.layoutManager as? LinearLayoutManager ?: return
         val scroller = object : LinearSmoothScroller(requireContext()) {
             override fun calculateDtToFit(
@@ -465,16 +480,23 @@ class ThreadFragment : Fragment() {
             override fun onStop() {
                 super.onStop()
                 if (_binding == null) return
-                flashQuote(index)
+                binding.messages.post { flashQuote(id, 3) }
+                updateJumpButton()
             }
         }
         scroller.targetPosition = index
         layout.startSmoothScroll(scroller)
     }
 
-    private fun flashQuote(index: Int) {
-        val bubble = binding.messages.findViewHolderForAdapterPosition(index)?.itemView?.findViewById<View>(R.id.bubble)
-            ?: return
+    private fun flashQuote(id: String, tries: Int) {
+        val current = _binding ?: return
+        val index = adapter.currentList.indexOfFirst { it.message.messageId == id }
+        if (index < 0) return
+        val bubble = current.messages.findViewHolderForAdapterPosition(index)?.itemView?.findViewById<View>(R.id.bubble)
+        if (bubble == null) {
+            if (tries > 0) current.messages.postDelayed({ flashQuote(id, tries - 1) }, 120)
+            return
+        }
         val density = bubble.resources.displayMetrics.density
         val highlight = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE

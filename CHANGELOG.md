@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.8
+
+- When someone @mentions you, the notification now says so: "<Sender> mentioned you", with the group name and the message below it. If message text is hidden, it shows only "<Sender> mentioned you". Mentions use their own high-importance "Mentions" notification channel and keep the sender photo and group icon.
+- Reply quotes inside a bubble size to their own content (the bubble grows up to its normal maximum width). The quoted sender name is never cut off, and the quoted text shows up to 3 lines before ending in an ellipsis.
+- Tapping a reply quote scrolls to the original message and briefly highlights it. If the original is older than what's loaded, the app loads earlier history (with a cap) until it finds it, or shows "Message not available". Use the jump-to-newest button to go back.
+- Message notifications are conversation-style: they're tied to the conversation's shortcut and show the contact photo or group icon (or an initials circle) as the large icon, never the app logo. The app appears only as the small status-bar glyph.
+
 ## v0.7.7
 
 - @mentions are highlighted inside the message box as you type, in the same accent chip style as sent mentions. Backspace still trims the last name, then removes the mention.

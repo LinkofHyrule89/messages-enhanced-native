@@ -28,6 +28,7 @@
     <string name="save">Save</string>
     <string name="app_version">Version %1$s</string>
     <string name="channel_messages">Messages</string>
+    <string name="channel_mentions">Mentions</string>
     <string name="channel_alerts">Server alerts</string>
     <string name="channel_updates">Updates</string>
     <string name="notif_public_title">New message</string>

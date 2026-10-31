@@ -182,8 +182,8 @@ class SwipeGestureTest {
 
         assertEquals(80, ReplyTexts.barSnippet("a".repeat(83)).length)
         assertFalse(ReplyTexts.barSnippet("b".repeat(90)).contains("…"))
-        assertEquals("a".repeat(60), ReplyTexts.quoteText("a".repeat(60)))
-        assertEquals("a".repeat(60) + "…", ReplyTexts.quoteText("a".repeat(61)))
+        assertEquals("a".repeat(240), ReplyTexts.quoteText("a".repeat(240)))
+        assertEquals("a".repeat(240) + "…", ReplyTexts.quoteText("a".repeat(241)))
         assertEquals(ReplyTexts.MEDIA, ReplyTexts.quoteText(""))
         assertEquals(ReplyTexts.MISSING, ReplyTexts.MISSING)
 

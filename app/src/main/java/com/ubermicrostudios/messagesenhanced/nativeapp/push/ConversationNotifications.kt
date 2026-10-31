@@ -10,6 +10,11 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
+import androidx.core.content.LocusIdCompat
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import com.ubermicrostudios.messagesenhanced.nativeapp.share.ShareShortcuts
+import com.ubermicrostudios.messagesenhanced.nativeapp.share.ShareTargets
 import androidx.core.graphics.drawable.IconCompat
 import androidx.core.graphics.drawable.toBitmap
 import coil.ImageLoader
@@ -68,6 +73,7 @@ class ConversationNotifications @Inject constructor(
                 groupAvatarUrl = incoming.groupAvatarUrl,
                 source = incoming.source,
                 legacyTag = incoming.legacyTag,
+                mentionedBy = incoming.mentionedBy,
             )
         }
         val thread = store.snapshot().firstOrNull { it.conversationId == incoming.conversationId } ?: return true
@@ -171,8 +177,12 @@ class ConversationNotifications @Inject constructor(
     private fun postConversation(thread: NotifThread, icons: Map<String, Bitmap>, silent: Boolean) {
         val selfName = context.getString(R.string.notif_you)
         val self = Person.Builder().setName(selfName).setKey(MessageNotificationHistory.SELF_KEY).build()
-        val style = NotificationCompat.MessagingStyle(self).setGroupConversation(thread.isGroup)
-        if (thread.isGroup) {
+        val mention = thread.mentionedBy.isNotBlank()
+        val channel = if (mention) MessagingService.CHANNEL_MENTIONS else MessagingService.CHANNEL_MESSAGES
+        val style = NotificationCompat.MessagingStyle(self).setGroupConversation(thread.isGroup || mention)
+        if (mention) {
+            style.setConversationTitle(MessageNotificationPayload.mentionTitle(formatPhoneForDisplay(thread.mentionedBy)))
+        } else if (thread.isGroup) {
             val title = formatPhoneForDisplay(thread.title).ifBlank { context.getString(R.string.app_name) }
             style.setConversationTitle(title)
         }
@@ -181,13 +191,13 @@ class ConversationNotifications @Inject constructor(
         }
         val whenMs = thread.lines.lastOrNull()?.timestampMs?.takeIf { it > 0L } ?: System.currentTimeMillis()
         val color = ContextCompat.getColor(context, R.color.accent)
-        val publicVersion = NotificationCompat.Builder(context, MessagingService.CHANNEL_MESSAGES)
+        val publicVersion = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(color)
             .setContentTitle(context.getString(R.string.notif_public_title))
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build()
-        val builder = NotificationCompat.Builder(context, MessagingService.CHANNEL_MESSAGES)
+        val builder = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(color)
             .setStyle(style)
@@ -204,9 +214,18 @@ class ConversationNotifications @Inject constructor(
             .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
             .addAction(replyAction(thread))
             .addAction(markReadAction(thread.conversationId))
+        if (mention && thread.isGroup) {
+            formatPhoneForDisplay(thread.title).takeIf { it.isNotBlank() }?.let { builder.setSubText(it) }
+        }
         if (silent) builder.setSilent(true)
-        largeIcon(thread, icons)?.let { icon ->
-            builder.setLargeIcon(icon.toIcon(context))
+        // Conversation photo (group icon or sender) or an initials circle, never the app logo.
+        val convIcon = largeIcon(thread, icons)
+        convIcon?.let { icon -> builder.setLargeIcon(icon.toIcon(context)) }
+        // Conversation-style (Android 11+): tie to the long-lived conversation shortcut so the
+        // system shows the person/group avatar with only a small app badge.
+        conversationShortcut(thread, convIcon)?.let { sid ->
+            builder.setShortcutId(sid)
+            builder.setLocusId(LocusIdCompat(sid))
         }
         val posted = builder.build()
         val id = MessageNotificationIds.notificationId(thread.conversationId)
@@ -264,6 +283,30 @@ class ConversationNotifications @Inject constructor(
         builder.setIcon(IconCompat.createWithBitmap(bitmap))
         return builder.build()
     }
+
+    private fun conversationShortcut(thread: NotifThread, icon: IconCompat?): String? = runCatching {
+        val sid = ShareTargets.shortcutId(thread.conversationId)
+        val exists = ShortcutManagerCompat.getDynamicShortcuts(context).any { it.id == sid }
+        if (!exists) {
+            val name = formatPhoneForDisplay(
+                if (thread.isGroup) thread.title else thread.lines.lastOrNull { !it.fromMe }?.senderName ?: thread.title,
+            ).ifBlank { "Conversation" }
+            val open = Intent(context, ConversationsActivity::class.java).apply {
+                action = ConversationsActivity.ACTION_OPEN_THREAD
+                putExtra(ConversationsActivity.EXTRA_CONV, thread.conversationId)
+            }
+            val b = ShortcutInfoCompat.Builder(context, sid)
+                .setShortLabel(name.take(24))
+                .setLongLabel(name)
+                .setIntent(open)
+                .setLongLived(true)
+                .setCategories(setOf(ShareShortcuts.CATEGORY))
+            icon?.let { b.setIcon(it) }
+            if (!thread.isGroup) b.setPerson(Person.Builder().setName(name).setKey(sid).also { p -> icon?.let { p.setIcon(it) } }.build())
+            ShortcutManagerCompat.pushDynamicShortcut(context, b.build())
+        }
+        sid
+    }.getOrNull()
 
     private fun largeIcon(thread: NotifThread, icons: Map<String, Bitmap>): IconCompat? {
         val bitmap = if (thread.isGroup) {

@@ -116,12 +116,16 @@ class MessagingService : FirebaseMessagingService() {
     companion object {
         const val CHANNEL_MESSAGES = "messages"
         const val CHANNEL_ALERTS = "alerts"
+        const val CHANNEL_MENTIONS = "mentions"
         const val NOTIF_ID = 1
 
         fun ensureChannels(context: Context) {
             val nm = context.getSystemService(NotificationManager::class.java) ?: return
             nm.createNotificationChannel(
                 NotificationChannel(CHANNEL_MESSAGES, context.getString(R.string.channel_messages), NotificationManager.IMPORTANCE_HIGH),
+            )
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_MENTIONS, context.getString(R.string.channel_mentions), NotificationManager.IMPORTANCE_HIGH),
             )
             nm.createNotificationChannel(
                 NotificationChannel(CHANNEL_ALERTS, context.getString(R.string.channel_alerts), NotificationManager.IMPORTANCE_DEFAULT),

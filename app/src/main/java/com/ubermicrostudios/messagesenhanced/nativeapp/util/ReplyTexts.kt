@@ -8,7 +8,7 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.MessageDto
  */
 object ReplyTexts {
     const val BAR_LIMIT = 80
-    const val QUOTE_LIMIT = 60
+    const val QUOTE_LIMIT = 240
     const val YOU = "You"
     const val THEM = "Them"
     const val PHOTO = "Photo"

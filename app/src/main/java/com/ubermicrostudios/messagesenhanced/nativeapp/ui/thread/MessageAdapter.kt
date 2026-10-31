@@ -395,8 +395,9 @@ class MessageAdapter(
             name.isVisible = false
             text.text = ReplyTexts.MISSING
             text.setTypeface(null, Typeface.ITALIC)
-            box.setOnClickListener(null)
-            box.isClickable = false
+            // Not loaded yet: tapping pages older history to find it.
+            box.isClickable = true
+            box.setOnClickListener { onQuote(replyId) }
             return
         }
         val conv = conversation()

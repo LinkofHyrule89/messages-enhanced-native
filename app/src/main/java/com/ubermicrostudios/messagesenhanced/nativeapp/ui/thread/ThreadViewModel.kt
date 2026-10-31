@@ -87,6 +87,8 @@ sealed interface ThreadEffect {
     data class Toast(val text: String) : ThreadEffect
     data object Close : ThreadEffect
     data object ListChanged : ThreadEffect
+    /** The quoted original is now loaded: scroll to it and flash it. */
+    data class ScrollToMessage(val id: String) : ThreadEffect
 }
 
 @HiltViewModel
@@ -861,6 +863,41 @@ class ThreadViewModel @Inject constructor(
                     refresh(markRead = false)
                 }
                 .onFailure { effect(ThreadEffect.Toast(NetErrors.friendly(it))) }
+        }
+    }
+
+    private var findingOriginal: String? = null
+    private val FIND_ORIGINAL_CAP = 2_000
+
+    /**
+     * Pages older history (bigger windows, capped) until the quoted message [messageId]
+     * is loaded, then asks the screen to scroll to it. Toasts when it can't be found.
+     */
+    fun findOriginal(messageId: String) {
+        val id = _state.value.conversationId
+        if (id.isBlank() || messageId.isBlank() || findingOriginal == messageId) return
+        findingOriginal = messageId
+        viewModelScope.launch {
+            try {
+                var limit = maxOf(messageLimit, 80)
+                while (limit < FIND_ORIGINAL_CAP) {
+                    limit = minOf(limit * 2, FIND_ORIGINAL_CAP)
+                    val list = runCatchingCancellable { messagesRepo.messages(id, limit) }.getOrNull() ?: break
+                    if (_state.value.conversationId != id) return@launch
+                    if (list.any { it.messageId == messageId }) {
+                        messageLimit = limit
+                        refreshGen++
+                        val locals = _state.value.messages.filter { it.messageId.startsWith("local-") }
+                        _state.update { it.copy(messages = list + locals, loadedOnce = true) }
+                        effect(ThreadEffect.ScrollToMessage(messageId))
+                        return@launch
+                    }
+                    if (list.size < limit) break // whole history loaded
+                }
+                effect(ThreadEffect.Toast("Message not available"))
+            } finally {
+                findingOriginal = null
+            }
         }
     }
 

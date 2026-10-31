@@ -34,6 +34,8 @@ data class NotifThread(
     val groupAvatarUrl: String = "",
     val source: String = "sms",
     val legacyTag: String = "",
+    /** Who @mentioned the owner in the still-shown messages ("" = no mention). */
+    val mentionedBy: String = "",
 )
 
 /** A push payload reduced to the fields the notification history stores. */
@@ -45,6 +47,7 @@ data class IncomingNotification(
     val line: NotifLine,
     val groupAvatarUrl: String,
     val legacyTag: String,
+    val mentionedBy: String = "",
 )
 
 /**
@@ -76,6 +79,7 @@ object MessageNotificationHistory {
         groupAvatarUrl: String = "",
         source: String = "",
         legacyTag: String = "",
+        mentionedBy: String = "",
         max: Int = MAX_LINES,
     ): List<NotifThread> {
         if (conversationId.isBlank()) return threads
@@ -88,6 +92,7 @@ object MessageNotificationHistory {
             groupAvatarUrl = groupAvatarUrl.ifBlank { existing?.groupAvatarUrl.orEmpty() },
             source = source.ifBlank { existing?.source.orEmpty().ifBlank { "sms" } },
             legacyTag = legacyTag.ifBlank { existing?.legacyTag.orEmpty() },
+            mentionedBy = mentionedBy.ifBlank { existing?.mentionedBy.orEmpty() },
         )
         return listOf(updated) + threads.filter { it.conversationId != conversationId }
     }
@@ -273,7 +278,15 @@ object MessageNotificationPayload {
     ): IncomingNotification? {
         val conversationId = conversationKey(data)
         if (conversationId.isBlank()) return null
-        val personRaw = first(data, "person", "sender_name", "sender")
+        val fullTitle = first(data, "title")
+        // Hidden-text pushes leave out "person"; the server title is still "Sender · Group".
+        val personRaw = first(data, "person", "sender_name", "sender").ifBlank {
+            if (fullTitle.contains(" · ")) fullTitle.substringBefore(" · ") else ""
+        }
+        val mentions = when (first(data, "mentions_me", "mentionsMe").trim().lowercase()) {
+            "1", "true", "yes" -> true
+            else -> false
+        }
         val titleRaw = first(data, "title").ifBlank { personRaw }.let { t ->
             // Server group titles are "Sender · Group"; the conversation title is the group.
             val prefix = "$personRaw · "
@@ -281,7 +294,9 @@ object MessageNotificationPayload {
         }
         val placeholder = hiddenBody.ifBlank { "New message" }
         val rawBody = first(data, "body", "text", "message")
+        val mentionedBy = if (mentions) personRaw.ifBlank { titleRaw }.ifBlank { "Someone" } else ""
         val text = when {
+            hideBody && mentionedBy.isNotEmpty() -> mentionTitle(mentionedBy)
             hideBody -> placeholder
             rawBody.isBlank() -> placeholder
             else -> rawBody
@@ -318,8 +333,11 @@ object MessageNotificationPayload {
             ),
             groupAvatarUrl = if (group) groupAvatarUrl(origin, conversationId, source) else "",
             legacyTag = first(data, "tag"),
+            mentionedBy = mentionedBy,
         )
     }
+
+    fun mentionTitle(sender: String): String = "$sender mentioned you"
 
     /** Explicit http(s) or absolute path wins. Otherwise the sms `/api/avatar` URL the rest of the app uses. */
     fun senderAvatarUrl(
