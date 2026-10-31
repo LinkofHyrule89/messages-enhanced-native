@@ -20,6 +20,8 @@ import java.util.TimeZone
  */
 object HealthBanner {
     const val PERSIST_MS = 30_000L
+    /** Google "disconnected" must last this long continuously (server restarts / VPN blips reconnect sooner). */
+    const val DISCONNECTED_PERSIST_MS = 45_000L
 
     enum class Severity { DOWN, WARN }
 
@@ -54,7 +56,10 @@ object HealthBanner {
         formatClock: (Long) -> String,
         unstableSinceMs: Long?,
     ): Banner? {
-        val lines = healthLines(health?.checks.orEmpty(), nowMs, formatClock)
+        // A fresh "connected" pairing sample clears a stale Google-down health line at once.
+        val reconnected = pairing?.google?.connected == true
+        val checks = health?.checks.orEmpty().filter { !(reconnected && it.name != "vpn") }
+        val lines = healthLines(checks, nowMs, formatClock)
         if (lines.isNotEmpty()) return Banner(lines.joinToString(" "), Severity.DOWN)
         if (pairing == null) return null
         return pairingBanner(pairing, nowMs, unstableSinceMs)
@@ -85,8 +90,9 @@ object HealthBanner {
     ): List<String> {
         val lines = ArrayList<String>(checks.size)
         for (check in checks) {
-            if (check.ok || check.downSinceMs <= 0L || nowMs - check.downSinceMs < PERSIST_MS) continue
             val vpn = check.name == "vpn"
+            val wait = if (vpn) PERSIST_MS else DISCONNECTED_PERSIST_MS
+            if (check.ok || check.downSinceMs <= 0L || nowMs - check.downSinceMs < wait) continue
             val what = if (vpn) "VPN is down" else "Google Messages is disconnected"
             val detail = if (check.detail.isNotEmpty()) " (${check.detail})" else ""
             val extra = if (vpn) "" else " Tap to reconnect Google Messages."
@@ -134,6 +140,8 @@ object HealthBanner {
         if (nowMs - since < PERSIST_MS) return null
         return if (isConnecting(google, pairing.pairing?.state)) {
             Banner("Connecting to Google Messages…", Severity.WARN)
+        } else if (nowMs - since < DISCONNECTED_PERSIST_MS) {
+            null
         } else {
             Banner("Disconnected from Google Messages. Tap to reconnect Google Messages.", Severity.DOWN)
         }

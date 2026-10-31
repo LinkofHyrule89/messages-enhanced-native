@@ -68,7 +68,7 @@ class HealthBannerTest {
                 HealthCheckDto(name = "google", ok = false, detail = "needs pairing", downSinceMs = 5_000),
             ),
         )
-        val banner = HealthBanner.banner(health, null, nowMs = 35_000, clock, null)
+        val banner = HealthBanner.banner(health, null, nowMs = 50_000, clock, null)
         assertEquals(
             "Google Messages is disconnected (needs pairing) since 9:00 AM. New messages may be delayed. Tap to reconnect Google Messages.",
             banner!!.text,
@@ -123,7 +123,7 @@ class HealthBannerTest {
                 HealthCheckDto(name = "google", ok = false, detail = "too fresh", downSinceMs = 50_000),
             ),
         )
-        val banner = HealthBanner.banner(health, null, nowMs = 40_000, clock, null)
+        val banner = HealthBanner.banner(health, null, nowMs = 50_000, clock, null)
         assertEquals(
             "VPN is down since 9:00 AM. New messages may be delayed. " +
                 "Google Messages is disconnected (disconnected) since 9:00 AM. New messages may be delayed. Tap to reconnect Google Messages.",
@@ -216,8 +216,8 @@ class HealthBannerTest {
         tracked = HealthBanner.nextClock(tracked, dropped, nowMs = 50_000)
         assertEquals(HealthBanner.Unstable.DISCONNECTED, tracked!!.kind)
         assertEquals(50_000L, tracked!!.sinceMs)
-        assertNull(HealthBanner.banner(null, dropped, nowMs = 79_999, clock, tracked!!.sinceMs))
-        val down = HealthBanner.banner(null, dropped, nowMs = 80_000, clock, tracked!!.sinceMs)
+        assertNull(HealthBanner.banner(null, dropped, nowMs = 94_999, clock, tracked!!.sinceMs))
+        val down = HealthBanner.banner(null, dropped, nowMs = 95_000, clock, tracked!!.sinceMs)
         assertEquals("Disconnected from Google Messages. Tap to reconnect Google Messages.", down!!.text)
         assertEquals(HealthBanner.Severity.DOWN, down.severity)
         assertTrue(HealthBanner.opensGoogleReconnect(down))
@@ -241,7 +241,7 @@ class HealthBannerTest {
         assertNull(HealthBanner.banner(null, idle, nowMs = 0, clock, unstableSinceMs = null))
         assertEquals(
             "Disconnected from Google Messages. Tap to reconnect Google Messages.",
-            HealthBanner.banner(null, idle, nowMs = 30_000, clock, idleClock.sinceMs)!!.text,
+            HealthBanner.banner(null, idle, nowMs = 45_000, clock, idleClock.sinceMs)!!.text,
         )
     }
 
@@ -261,6 +261,12 @@ class HealthBannerTest {
         assertEquals(started, kept)
         val recovered = HealthBanner.nextClock(started, paired(connected = true, phone = true), nowMs = 20_000)
         assertNull(recovered)
+    }
+
+    @Test
+    fun reconnectedPairing_clearsStaleGoogleHealthLine_atOnce() {
+        val health = HealthResponse(checks = listOf(HealthCheckDto(name = "google", ok = false, detail = "disconnected", downSinceMs = 1_000)))
+        assertNull(HealthBanner.banner(health, paired(connected = true, phone = true), nowMs = 90_000, clock, null))
     }
 
     @Test
