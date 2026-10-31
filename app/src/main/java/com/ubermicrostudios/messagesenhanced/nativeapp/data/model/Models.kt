@@ -168,6 +168,8 @@ data class ParticipantDto(
     @SerialName("isMe") val isMeCamel: Boolean = false,
     val hidden: Boolean = false,
     @SerialName("first_name") val firstName: String = "",
+    /** Phone-assigned participant color ("#RRGGBB"), used for the avatar and group sender name. */
+    val color: String = "",
 ) {
     val me: Boolean get() = isMe || isMeCamel
 }

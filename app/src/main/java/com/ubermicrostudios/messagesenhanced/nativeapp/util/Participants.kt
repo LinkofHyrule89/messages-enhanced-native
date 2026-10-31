@@ -96,6 +96,31 @@ object Participants {
 
     fun avatarColor(seed: String): Int = hsl(hue(seed), 0.45f, 0.38f)
 
+    /** Light fallback palette for sender names when the phone sent no color. */
+    private val SENDER_PALETTE = intArrayOf(
+        0xFFF28B82.toInt(), 0xFF81C995.toInt(), 0xFFFDD663.toInt(), 0xFF8AB4F8.toInt(),
+        0xFFC58AF9.toInt(), 0xFFFCAD70.toInt(), 0xFFFF8BCB.toInt(), 0xFF78D9EC.toInt(),
+    )
+
+    /** The phone's participant color, parsed, or null. */
+    fun phoneColor(person: ParticipantDto?): Int? {
+        val c = person?.color?.trim().orEmpty()
+        if (!Regex("^#[0-9A-Fa-f]{6}$").matches(c)) return null
+        return (0xFF000000 or c.substring(1).toLong(16)).toInt()
+    }
+
+    /**
+     * Group sender-name color, as Google Messages does it: each participant keeps a
+     * color assigned on the phone (its avatar color); we use that. Without one, a
+     * stable pick from a palette by number/name so names still differ.
+     */
+    fun senderColor(person: ParticipantDto?, seed: String): Int {
+        phoneColor(person)?.let { return it }
+        var h = 0
+        for (ch in seed) h = h * 31 + ch.code
+        return SENDER_PALETTE[Math.floorMod(h, SENDER_PALETTE.size)]
+    }
+
     /** Display name the web search box uses: unified name, then Name, then the id. */
     fun convName(conversation: ConversationDto): String =
         conversation.unifiedName.ifBlank { conversation.name }.ifBlank { conversation.conversationId }

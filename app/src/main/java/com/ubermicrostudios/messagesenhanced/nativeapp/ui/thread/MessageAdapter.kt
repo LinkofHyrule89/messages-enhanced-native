@@ -60,8 +60,6 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.util.ThemeColors
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhonesInText
 
-private const val SENDER_GOLD = 0xFFF2C94C.toInt()
-
 class MessageAdapter(
     private val mediaUrl: (MessageDto) -> String,
     private val previewOf: (String) -> LinkPreviewDto?,
@@ -302,7 +300,21 @@ class MessageAdapter(
         val senderName = item.senderName.ifBlank { item.senderNumber }
         sender.isVisible = row.showSender && senderName.isNotBlank()
         sender.text = formatPhoneForDisplay(senderName)
-        sender.setTextColor(SENDER_GOLD) // group sender names are gold, as on the phone
+        run {
+            val conv = conversation()
+            val person = item.senderNumber.takeIf { it.any(Char::isDigit) }?.let { Participants.memberByName(conv, it) }
+                ?: item.senderName.takeIf { it.isNotBlank() }?.let { Participants.memberByName(conv, it) }
+            val base = Participants.senderColor(person, item.senderNumber.ifBlank { item.senderName })
+            val night = (sender.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+            // Lift dark tones on dark theme, deepen light tones on light theme, so names stay readable.
+            val lum = androidx.core.graphics.ColorUtils.calculateLuminance(base)
+            sender.setTextColor(when {
+                night && lum < 0.35 -> androidx.core.graphics.ColorUtils.blendARGB(base, android.graphics.Color.WHITE, 0.45f)
+                !night && lum > 0.3 -> androidx.core.graphics.ColorUtils.blendARGB(base, android.graphics.Color.BLACK, 0.4f)
+                else -> base
+            })
+        }
 
         bubble.background = bubbleDrawable(density, fromMe, row.pos, BubbleColors.fill(look.colors, fromMe))
         // Hide the previewed URL when its card shows; no card -> keep the link.
@@ -615,7 +627,7 @@ class MessageAdapter(
             }
         }
         val bg = ContextCompat.getDrawable(avatar.context, R.drawable.bg_sender_avatar)?.mutate()
-        bg?.setTint(Participants.avatarColor(seed))
+        bg?.setTint(Participants.phoneColor(person) ?: Participants.avatarColor(seed))
         avatar.background = bg
     }
 
