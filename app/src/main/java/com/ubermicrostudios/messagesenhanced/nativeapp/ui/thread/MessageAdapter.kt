@@ -633,43 +633,62 @@ class MessageAdapter(
         val dm = bubble.resources.displayMetrics
         val d = dm.density
         val wide = minOf((300 * d).toInt(), (dm.widthPixels * 0.66f).toInt())
-        val quoteShown = (bubble.findViewById<View>(R.id.reply_quote)?.isVisible == true)
-        val senderInside = sender.parent === bubble && sender.isVisible
         val photo = image.isVisible && !emoji && bubble.background != null
         val lp = image.layoutParams as LinearLayout.LayoutParams
+        val pv = image as? BubblePhotoView
+        // The bubble has no padding of its own: text rows carry it, so photos and link
+        // cards sit flush with the bubble edges and are clipped to its corners.
+        lp.marginStart = 0
+        lp.marginEnd = 0
+        lp.topMargin = 0
+        lp.bottomMargin = 0
         if (photo) {
-            lp.width = wide
+            lp.width = ViewGroup.LayoutParams.WRAP_CONTENT
             lp.height = ViewGroup.LayoutParams.WRAP_CONTENT
-            lp.marginStart = (-12 * d).toInt()
-            lp.marginEnd = (-12 * d).toInt()
-            lp.topMargin = if (quoteShown || senderInside) 0 else (-8 * d).toInt()
-            lp.bottomMargin = if (body.isVisible) (8 * d).toInt() else (4 * d).toInt()
-            image.adjustViewBounds = true
-            image.scaleType = ImageView.ScaleType.FIT_CENTER
-            image.maxHeight = minOf((400 * d).toInt(), (dm.heightPixels * 0.6f).toInt())
+            image.scaleType = ImageView.ScaleType.FIT_XY
             image.minimumHeight = (120 * d).toInt()
+            pv?.photoMode = true
+            pv?.maxPhotoWidth = wide
+            pv?.maxPhotoHeight = minOf((400 * d).toInt(), (dm.heightPixels * 0.6f).toInt())
+            pv?.caption = body
         } else {
             lp.width = (220 * d).toInt()
             lp.height = (160 * d).toInt()
-            lp.marginStart = 0
-            lp.marginEnd = 0
-            lp.topMargin = 0
-            lp.bottomMargin = 0
-            image.adjustViewBounds = false
             image.scaleType = ImageView.ScaleType.CENTER_CROP
-            image.maxHeight = Int.MAX_VALUE
             image.minimumHeight = 0
+            pv?.photoMode = false
+            pv?.caption = null
+            body.maxWidth = Int.MAX_VALUE
         }
         image.layoutParams = lp
         if (linkCard.isVisible) {
             val cp = linkCard.layoutParams as LinearLayout.LayoutParams
             cp.width = wide
+            val quoteShown = bubble.findViewById<View>(R.id.reply_quote)?.isVisible == true
+            val senderInside = sender.parent === bubble && sender.isVisible
             val first = !body.isVisible && !quoteShown && !senderInside && !image.isVisible
-            cp.topMargin = if (first) (-8 * d).toInt() else (8 * d).toInt()
-            cp.bottomMargin = (2 * d).toInt()
+            cp.topMargin = if (first) 0 else (8 * d).toInt()
+            cp.marginStart = 0
+            cp.marginEnd = 0
             linkCard.layoutParams = cp
+            if (!photo) body.maxWidth = wide
+        } else if (!photo) {
+            body.maxWidth = Int.MAX_VALUE
         }
-        bubble.clipToOutline = photo || linkCard.isVisible
+        bubble.clipToOutline = true
+    }
+
+    /**
+     * The quote sizes to its own content (name and text, wrapping to at most 3 lines only
+     * when it is longer than the bubble can hold) and the bubble widens to fit it, so a
+     * short reply such as "Oh nice" never squeezes the quote. The measure spec clamps
+     * the minimum to the bubble's max width.
+     */
+    private fun sizeQuote(box: View, name: TextView, text: TextView) {
+        val nameW = if (name.isVisible) name.paint.measureText(name.text.toString()) else 0f
+        val textW = text.paint.measureText(text.text.toString().replace('\n', ' '))
+        val pad = box.paddingLeft + box.paddingRight
+        box.minimumWidth = QuoteWidth.intrinsic(nameW, textW, pad)
     }
 
     private fun bindQuote(root: View, item: MessageDto) {
@@ -689,6 +708,7 @@ class MessageAdapter(
             name.isVisible = false
             text.text = ReplyTexts.MISSING
             text.setTypeface(null, Typeface.ITALIC)
+            sizeQuote(box, name, text)
             // Not loaded yet: tapping pages older history to find it.
             box.isClickable = true
             box.setOnClickListener { onQuote(replyId) }
@@ -699,6 +719,7 @@ class MessageAdapter(
         name.text = formatPhoneForDisplay(ReplyTexts.author(original, conv.name, conv.isGroup))
         text.setTypeface(null, Typeface.NORMAL)
         text.text = ReplyTexts.quoteText(ReplyTexts.snippetSource(original))
+        sizeQuote(box, name, text)
         box.isClickable = true
         box.setOnClickListener { onQuote(replyId) }
     }
@@ -900,7 +921,7 @@ class MessageAdapter(
 
     private fun bubbleDrawable(density: Float, fromMe: Boolean, pos: MessageRuns.Pos, color: Int): GradientDrawable {
         val radius = 20f * density
-        val tail = 6f * density
+        val tail = 4f * density
         val radii = FloatArray(8) { radius }
         fun tailTop() {
             if (fromMe) {

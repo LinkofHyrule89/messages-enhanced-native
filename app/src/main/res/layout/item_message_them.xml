@@ -62,9 +62,6 @@
         android:layout_marginStart="8dp"
         android:background="@drawable/bg_bubble_them"
         android:orientation="vertical"
-        android:paddingStart="12dp"
-        android:paddingTop="8dp"
-        android:paddingEnd="12dp"
         android:paddingBottom="6dp"
         app:layout_constraintEnd_toEndOf="@id/edge"
         app:layout_constraintHorizontal_bias="0"
@@ -77,10 +74,10 @@
             android:id="@+id/reply_quote"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="-6dp"
-            android:layout_marginEnd="-6dp"
-            android:layout_marginTop="-2dp"
-            android:layout_marginBottom="8dp"
+            android:layout_marginStart="6dp"
+            android:layout_marginEnd="6dp"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="0dp"
             android:background="@drawable/bg_reply_quote"
             android:clickable="true"
             android:focusable="true"
@@ -105,11 +102,11 @@
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
                 android:maxLines="3"
-                android:textColor="#B8FFFFFF"
-                android:textSize="13sp" />
+                android:textColor="#E0FFFFFF"
+                android:textSize="12sp" />
         </LinearLayout>
 
-        <ImageView
+        <com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread.BubblePhotoView
             android:id="@+id/image"
             android:layout_width="220dp"
             android:layout_height="160dp"
@@ -121,6 +118,9 @@
             android:id="@+id/attachment"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:paddingStart="12dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="12dp"
             android:textColor="@color/text"
             android:textStyle="italic"
             android:visibility="gone" />
@@ -129,6 +129,9 @@
             android:id="@+id/body"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:paddingStart="12dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="12dp"
             android:textColor="@color/text"
             android:textSize="16sp" />
 
@@ -137,10 +140,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:layout_marginStart="-12dp"
-            android:layout_marginEnd="-12dp"
-            android:background="@drawable/bg_link_card"
-            android:minWidth="200dp"
+            android:minWidth="220dp"
             android:orientation="vertical"
             android:visibility="gone">
 
@@ -215,6 +215,8 @@
             android:id="@+id/reactions"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
             android:layout_marginTop="4dp"
             android:textColor="@color/text"
             android:textSize="13sp"
@@ -225,7 +227,9 @@
             android:layout_height="wrap_content"
             android:gravity="end|center_vertical"
             android:orientation="horizontal"
-            android:paddingTop="2dp">
+            android:paddingStart="12dp"
+            android:paddingTop="2dp"
+            android:paddingEnd="12dp">
 
             <TextView
                 android:id="@+id/star_mark"
