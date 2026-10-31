@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.13
+
+- Per-conversation drafts: text you type is saved automatically for that chat. Switching to another chat or group shows its own draft or an empty box, and coming back restores yours, mentions included. Drafts are kept only on this device (they survive restarts and never go to the server) and clear when you send or erase the text. Unsent photos and files are not kept in drafts.
+- The chat list shows "Draft: ..." for chats with an unsent draft, like Google Messages.
+- Sharing text into a chat that already has a draft adds the shared text on a new line instead of replacing the draft.
+
 ## v0.7.12
 
 - Holiday and keyword animations: messages like "Happy birthday", "Happy New Year", "love you", "lol", "good morning", seasonal greetings and more play a short full-screen effect, and reactions play a small burst. New setting "Holiday animations" (on by default). Respects the system "Remove animations" setting.

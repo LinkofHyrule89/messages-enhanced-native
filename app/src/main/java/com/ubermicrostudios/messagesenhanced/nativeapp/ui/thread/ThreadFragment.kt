@@ -1165,7 +1165,12 @@ class ThreadFragment : Fragment() {
         val files = args.getStringArrayList(ARG_SHARE_FILES).orEmpty().mapNotNull { decodeShareFile(it) }
         args.remove(ARG_SHARE_TEXT)
         args.remove(ARG_SHARE_FILES)
-        if (text.isNotBlank()) viewModel.onDraft(text)
+        // Shared text wins over an empty draft; otherwise it is appended to the saved draft.
+        if (text.isNotBlank()) {
+            val merged = com.ubermicrostudios.messagesenhanced.nativeapp.util.Drafts.mergeShared(viewModel.state.value.draft, text)
+            pendingCursor = merged.length
+            viewModel.onDraft(merged)
+        }
         if (files.isNotEmpty()) viewModel.stagePending(files).forEach { toast(it) }
     }
 

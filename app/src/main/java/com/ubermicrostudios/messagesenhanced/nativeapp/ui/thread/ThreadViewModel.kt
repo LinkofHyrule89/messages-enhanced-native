@@ -103,6 +103,7 @@ class ThreadViewModel @Inject constructor(
     private val prefs: AppPreferences,
     private val network: NetworkGate,
     private val savedStateHandle: SavedStateHandle,
+    private val drafts: com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.DraftStore,
 ) : ViewModel() {
 
     private val initialId: String = savedStateHandle[ARG_ID] ?: ""
@@ -129,6 +130,7 @@ class ThreadViewModel @Inject constructor(
             notificationMode = savedStateHandle.get<String>(ARG_NOTIFICATION).orEmpty().ifBlank { "all" },
             jumpMessageId = savedStateHandle.get<String>(ARG_JUMP_ID)?.takeIf { it.isNotBlank() },
             ready = openedMessages != null,
+            draft = drafts.get(initialId),
         ),
     )
     val state: StateFlow<ThreadUiState> = _state
@@ -188,7 +190,7 @@ class ThreadViewModel @Inject constructor(
                     else -> it.messages
                 },
                 ready = if (changed) cached != null else it.ready,
-                draft = if (changed) "" else it.draft,
+                draft = if (changed) drafts.get(conversationId) else it.draft,
                 reply = if (changed) null else it.reply,
                 error = null,
                 typingLabel = if (changed) "" else it.typingLabel,
@@ -246,6 +248,7 @@ class ThreadViewModel @Inject constructor(
 
     fun onDraft(value: String) {
         _state.update { it.copy(draft = value) }
+        drafts.put(_state.value.conversationId, value)
     }
 
     private var lastReadMarkedTs = 0L
@@ -525,6 +528,7 @@ class ThreadViewModel @Inject constructor(
         if (plan.media.isEmpty() && plan.text == null) return
         val files = current.pending
         val conv = current.conversationId
+        if (plan.clearDraft) drafts.clear(conv)
         val now = System.currentTimeMillis()
         val optimistic = ArrayList<MessageDto>()
         plan.media.forEach { action ->

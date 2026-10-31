@@ -31,6 +31,7 @@ class ConversationAdapter(
     private val origin: () -> String,
     private val onClick: (ConversationDto) -> Unit,
     private val onMenu: (ConversationDto, View) -> Unit,
+    private val draftOf: (String) -> String = { "" },
 ) : ListAdapter<ConvListRow, RecyclerView.ViewHolder>(Diff) {
 
     init {
@@ -126,6 +127,12 @@ class ConversationAdapter(
                 b.preview.text = TypingTracker.labelFor(typing.map { formatPhoneForDisplay(it) }, item.isGroup)
                 b.preview.setTextColor(colors.accent)
                 b.preview.setTypeface(Typeface.SANS_SERIF, if (unread) Typeface.BOLD_ITALIC else Typeface.ITALIC)
+                b.statusIcon.isVisible = false
+            } else if (draftOf(item.conversationId).isNotBlank()) {
+                // Google Messages: unsent text shows as "Draft: ..." in the list.
+                b.preview.text = com.ubermicrostudios.messagesenhanced.nativeapp.util.Drafts.listPreview(draftOf(item.conversationId))
+                b.preview.setTextColor(colors.accent)
+                b.preview.setTypeface(Typeface.SANS_SERIF, Typeface.ITALIC)
                 b.statusIcon.isVisible = false
             } else {
                 val preview = item.lastMessagePreview

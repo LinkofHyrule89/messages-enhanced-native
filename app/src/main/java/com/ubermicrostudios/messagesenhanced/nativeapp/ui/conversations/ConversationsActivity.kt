@@ -55,6 +55,12 @@ class ConversationsActivity : SessionActivity() {
     @Inject lateinit var updateChecker: UpdateChecker
     @Inject lateinit var prefs: AppPreferences
     @Inject lateinit var inboxCache: InboxCache
+    @Inject lateinit var draftStore: com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.DraftStore
+    private val refreshDrafts = Runnable { if (::adapter.isInitialized) adapter.notifyDataSetChanged() }
+    private val draftListener: () -> Unit = {
+        window.decorView.removeCallbacks(refreshDrafts)
+        window.decorView.postDelayed(refreshDrafts, 300)
+    }
     @Inject lateinit var whatsNew: WhatsNewPrompts
     @Inject lateinit var shareShortcuts: com.ubermicrostudios.messagesenhanced.nativeapp.share.ShareShortcuts
 
@@ -138,7 +144,9 @@ class ConversationsActivity : SessionActivity() {
             origin = { viewModel.origin() },
             onClick = { openThread(it) },
             onMenu = { conversation, anchor -> showConversationMenu(conversation, anchor) },
+            draftOf = { id -> draftStore.get(id) },
         )
+        draftStore.addListener(draftListener)
         searchAdapter = SearchAdapter(
             onConversation = { conversation ->
                 clearSearchField()
@@ -260,6 +268,8 @@ class ConversationsActivity : SessionActivity() {
     }
 
     override fun onDestroy() {
+        draftStore.removeListener(draftListener)
+        window.decorView.removeCallbacks(refreshDrafts)
         if (::binding.isInitialized) binding.healthBanner.animate().cancel()
         if (::updatePrompts.isInitialized) updatePrompts.dismiss()
         super.onDestroy()
