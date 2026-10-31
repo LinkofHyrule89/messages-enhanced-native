@@ -143,6 +143,7 @@ class ThreadFragment : Fragment() {
             localPinnedAtMs = args.getLong(ThreadViewModel.ARG_LOCAL_PINNED),
             notificationMode = args.getString(ThreadViewModel.ARG_NOTIFICATION).orEmpty(),
         )
+        if (savedInstanceState == null) consumeShare(args)
         val twoPane = resources.getBoolean(R.bool.two_pane)
         Insets.applyThreadChrome(binding.threadRoot, binding.header, binding.composerDock, twoPane) {
             updateListPadding()
@@ -951,6 +952,16 @@ class ThreadFragment : Fragment() {
         }
     }
 
+    /** Content from the Android share sheet / Direct Share: attach it and prefill; never sends. */
+    private fun consumeShare(args: Bundle) {
+        val text = args.getString(ARG_SHARE_TEXT).orEmpty()
+        val files = args.getStringArrayList(ARG_SHARE_FILES).orEmpty().mapNotNull { decodeShareFile(it) }
+        args.remove(ARG_SHARE_TEXT)
+        args.remove(ARG_SHARE_FILES)
+        if (text.isNotBlank()) viewModel.onDraft(text)
+        if (files.isNotEmpty()) viewModel.stagePending(files).forEach { toast(it) }
+    }
+
     private fun importUris(uris: List<Uri>) {
         if (uris.isEmpty()) return
         val appContext = requireContext().applicationContext
@@ -1058,6 +1069,25 @@ class ThreadFragment : Fragment() {
 
         fun writeIntent(intent: Intent, conv: ConversationDto, jumpId: String? = null, jumpTs: Long = 0L) {
             intent.putExtras(args(conv, jumpId, jumpTs))
+        }
+
+        const val ARG_SHARE_TEXT = "share_text"
+        const val ARG_SHARE_FILES = "share_files"
+
+        fun writeShare(intent: Intent, text: String, files: List<ComposerPlan.PendingFile>) {
+            if (text.isNotBlank()) intent.putExtra(ARG_SHARE_TEXT, text)
+            if (files.isNotEmpty()) {
+                intent.putStringArrayListExtra(
+                    ARG_SHARE_FILES,
+                    ArrayList(files.map { listOf(it.id, it.path, it.name, it.mime, it.size.toString()).joinToString("\t") }),
+                )
+            }
+        }
+
+        internal fun decodeShareFile(raw: String): ComposerPlan.PendingFile? {
+            val p = raw.split('\t')
+            if (p.size != 5 || p[1].isBlank()) return null
+            return ComposerPlan.PendingFile(id = p[0], path = p[1], name = p[2], mime = p[3], size = p[4].toLongOrNull() ?: 0L)
         }
     }
 }

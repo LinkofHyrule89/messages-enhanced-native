@@ -108,7 +108,9 @@ object ForwardPicker {
         caption: String,
         onSend: (Selection) -> Unit,
         onSendGroup: (Selection) -> Unit,
+        onCancel: () -> Unit = {},
     ) {
+        var chosen = false
         val binding = DialogShareBinding.inflate(LayoutInflater.from(context))
         val dialog = Dialog(context, R.style.Theme_MessagesEnhancedNative_Share)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
@@ -231,17 +233,22 @@ object ForwardPicker {
         }
         binding.send.setOnClickListener {
             val selection = current()
+            chosen = true
             dialog.dismiss()
             onSend(selection)
         }
         binding.sendGroup.setOnClickListener {
             val selection = current()
             if (selection.conversations.isEmpty() && selection.contacts.isEmpty()) return@setOnClickListener
+            chosen = true
             dialog.dismiss()
             onSendGroup(selection)
         }
         dialog.setOnShowListener { Insets.apply(binding.shareRoot, includeIme = true) }
-        dialog.setOnDismissListener { binding.thumb.dispose() }
+        dialog.setOnDismissListener {
+            binding.thumb.dispose()
+            if (!chosen) onCancel()
+        }
         renderList()
         dialog.show()
     }

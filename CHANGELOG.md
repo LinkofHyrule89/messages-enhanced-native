@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.6
+
+- Share to Messages Enhanced: the app now appears in Android's share menu for text, photos, videos, and files (one or many). Sharing opens the Share screen (recent conversations, contacts, search) with the content ready. Picking one conversation opens its composer with everything attached. Nothing sends until you tap Send.
+- Direct Share: recent conversations and groups appear at the top of the share menu with their photo or group icon (initials when there is no photo). Picking one opens that conversation's composer with the content attached. The list updates as conversations change.
+- Shared files are copied off the main thread, so large videos and multiple images don't freeze the app.
+
 ## v0.7.5
 
 - @mentions: mentions in received messages show as rounded chips, for both full names and first names, like Google Messages.

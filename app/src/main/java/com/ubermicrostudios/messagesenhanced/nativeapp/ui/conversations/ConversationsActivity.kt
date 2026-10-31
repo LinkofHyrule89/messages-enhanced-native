@@ -56,6 +56,7 @@ class ConversationsActivity : SessionActivity() {
     @Inject lateinit var prefs: AppPreferences
     @Inject lateinit var inboxCache: InboxCache
     @Inject lateinit var whatsNew: WhatsNewPrompts
+    @Inject lateinit var shareShortcuts: com.ubermicrostudios.messagesenhanced.nativeapp.share.ShareShortcuts
 
     private lateinit var binding: ActivityConversationsBinding
     private lateinit var updatePrompts: UpdatePrompts
@@ -281,6 +282,7 @@ class ConversationsActivity : SessionActivity() {
         adapter.submitList(ConversationOrder.rows(state.conversations)) {
             restoreListScroll()
         }
+        shareShortcuts.update(state.conversations)
         state.notice?.let { message ->
             Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
             viewModel.consumeNotice()

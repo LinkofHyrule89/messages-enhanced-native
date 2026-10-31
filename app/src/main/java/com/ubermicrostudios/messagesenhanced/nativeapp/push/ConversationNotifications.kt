@@ -16,6 +16,7 @@ import coil.ImageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.CircleBitmaps
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.InitialsBitmap
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.circleAvatar
 import com.ubermicrostudios.messagesenhanced.nativeapp.R
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.BaseUrlProvider
@@ -409,30 +410,7 @@ class ConversationNotifications @Inject constructor(
         return circular
     }
 
-    /** Circle with initials (or a dot for numbers) when no photo loads. */
-    private fun initialsBitmap(name: String, key: String): Bitmap {
-        val out = Bitmap.createBitmap(ICON_PX, ICON_PX, Bitmap.Config.ARGB_8888)
-        val canvas = android.graphics.Canvas(out)
-        val palette = intArrayOf(0xFF5C6BC0.toInt(), 0xFF26A69A.toInt(), 0xFFEF5350.toInt(), 0xFFAB47BC.toInt(),
-            0xFF42A5F5.toInt(), 0xFFFFA726.toInt(), 0xFF66BB6A.toInt(), 0xFF8D6E63.toInt())
-        val bg = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-        bg.color = palette[Math.floorMod(key.hashCode(), palette.size)]
-        canvas.drawCircle(ICON_PX / 2f, ICON_PX / 2f, ICON_PX / 2f, bg)
-        val words = name.trim().split(Regex("\\s+")).filter { it.firstOrNull()?.isLetter() == true }
-        val initials = when {
-            words.isEmpty() -> "#"
-            words.size == 1 -> words[0].take(1)
-            else -> words.first().take(1) + words.last().take(1)
-        }.uppercase()
-        val text = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-        text.color = android.graphics.Color.WHITE
-        text.textSize = ICON_PX * 0.42f
-        text.textAlign = android.graphics.Paint.Align.CENTER
-        text.isFakeBoldText = true
-        val y = ICON_PX / 2f - (text.descent() + text.ascent()) / 2f
-        canvas.drawText(initials, ICON_PX / 2f, y, text)
-        return out
-    }
+    private fun initialsBitmap(name: String, key: String): Bitmap = InitialsBitmap.of(name, key, ICON_PX)
 
     private fun mutableFlags(): Int {
         val base = PendingIntent.FLAG_UPDATE_CURRENT
