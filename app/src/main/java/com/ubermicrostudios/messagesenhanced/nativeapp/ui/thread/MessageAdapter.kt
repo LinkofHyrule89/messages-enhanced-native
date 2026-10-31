@@ -230,20 +230,18 @@ class MessageAdapter(
 
         bubble.background = bubbleDrawable(density, fromMe, row.pos, BubbleColors.fill(look.colors, fromMe))
         // Hide the previewed URL when its card shows; no card -> keep the link.
-        val shownText = LinkUrls.firstHttpUrl(item.body)
+        val deleted = MessageStatus.isDeleted(item.status)
+        val shownText = if (deleted) MessageStatus.DELETED_TEXT else LinkUrls.firstHttpUrl(item.body)
             ?.takeIf { previewOf(it) != null }
             ?.let { LinkUrls.stripUrl(item.body, it) } ?: item.body
         linkify(body, shownText, if (fromMe) Color.WHITE else look.colors.light)
+        body.setTypeface(null, if (deleted) android.graphics.Typeface.ITALIC else android.graphics.Typeface.NORMAL)
+        body.alpha = if (deleted) 0.7f else 1f
         body.isVisible = shownText.isNotBlank()
 
         val kind = if (item.isFromMe) MessageStatus.statusKind(item) else null
         val clock = Formatters.clockTime(item.timestampMs)
-        val scheduled = item.status.contains("SCHEDULED", ignoreCase = true)
-        val statusOnly = when {
-            kind == ReceiptKind.FAILED -> "Failed"
-            scheduled -> "Scheduled"
-            else -> ""
-        }
+        val statusOnly = MessageStatus.bubbleLabel(item)
         time.isVisible = statusOnly.isNotEmpty()
         time.text = statusOnly
         time.setTextColor(if (kind == ReceiptKind.FAILED) 0xFFFF8589.toInt() else 0x99FFFFFF.toInt())

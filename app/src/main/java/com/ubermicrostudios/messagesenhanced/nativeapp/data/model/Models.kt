@@ -55,6 +55,7 @@ data class MessageDto(
     @SerialName("transcribed_at_ms") val transcribedAtMs: Long = 0L,
     @SerialName("transcript_model") val transcriptModel: String = "",
     @SerialName("status_text") val statusText: String = "",
+    @SerialName("edited") val edited: Boolean = false,
     /** Local file path or absolute preview URL for a send that has not landed yet. */
     @kotlinx.serialization.Transient val localPreview: String = "",
 ) {

@@ -45,6 +45,28 @@ object MessageStatus {
         return null
     }
 
+    const val DELETED_TEXT = "This message was deleted"
+    const val REVOKING_TEXT = "Deleting for everyone…"
+
+    /** Deleted for everyone by its sender (libgm MESSAGE_DELETED = 300). */
+    fun isDeleted(status: String): Boolean = status.trim().uppercase() == "MESSAGE_DELETED"
+
+    /** Our own "delete for everyone" still waiting on Google. */
+    fun isRevoking(status: String): Boolean = status.trim().uppercase().contains("REVOCATION")
+
+    /** Small label under a bubble: Failed / Scheduled / Deleting… / Edited. */
+    fun bubbleLabel(message: MessageDto): String {
+        val s = message.status
+        return when {
+            isDeleted(s) -> ""
+            isRevoking(s) -> REVOKING_TEXT
+            message.isFromMe && statusKind(message) == ReceiptKind.FAILED -> "Failed"
+            s.contains("SCHEDULED", ignoreCase = true) -> "Scheduled"
+            message.edited -> "Edited"
+            else -> ""
+        }
+    }
+
     fun statusKind(message: MessageDto, posted: Boolean = false): ReceiptKind? =
         statusKind(message.status, message.messageId, message.isFromMe, posted)
 

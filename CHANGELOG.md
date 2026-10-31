@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.10
+
+- A message its sender deleted for everyone now stays in the thread as "This message was deleted" instead of disappearing.
+- While your own delete-for-everyone is pending, the bubble says "Deleting for everyone…" instead of "Sending…".
+- When a sender edits a message and the phone passes the change on, the bubble shows the latest text with an "Edited" label.
+
 ## v0.7.9
 
 - The @mention picker now looks like Google Messages: a rounded dark card floating just above the composer, with a round contact photo (or initials) and "@Full Name" for each member. It filters as you type and closes when you tap outside it.

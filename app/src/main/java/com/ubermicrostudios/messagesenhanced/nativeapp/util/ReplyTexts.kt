@@ -36,6 +36,7 @@ object ReplyTexts {
 
     /** Body stored on the reply target before the 80-character strip trim. */
     fun snippetSource(message: MessageDto): String {
+        if (MessageStatus.isDeleted(message.status)) return MessageStatus.DELETED_TEXT
         if (isImage(message)) return imageCaption(message).ifEmpty { PHOTO }
         if (message.body.isNotEmpty()) return message.body
         if (message.mediaId.isNotBlank() || message.mimeType.isNotBlank()) return MEDIA

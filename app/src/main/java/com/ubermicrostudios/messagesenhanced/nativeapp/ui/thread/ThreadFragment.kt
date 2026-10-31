@@ -335,7 +335,7 @@ class ThreadFragment : Fragment() {
         binding.title.text = formatPhoneForDisplay(state.title.ifBlank { getString(R.string.thread_title) })
         val rows = MessageRuns.rows(state.messages, state.isGroup)
         val signature = state.messages.joinToString("\n") {
-            "${it.messageId}\u0000${it.status}\u0000${it.statusText}\u0000${it.reactions}"
+            "${it.messageId}\u0000${it.status}\u0000${it.statusText}\u0000${it.reactions}\u0000${it.edited}\u0000${it.body.hashCode()}"
         }
         val jump = signature != messageSignature
         messageSignature = signature
