@@ -344,7 +344,7 @@ class MessageAdapter(
         // Emoji-only messages: animated Noto emoji (single) or large text (2-3), no bubble.
         val baseSize = (body.getTag(R.id.tag_body_size) as? Float) ?: body.textSize.also { body.setTag(R.id.tag_body_size, it) }
         val emojis = if (!deleted && !item.hasAttachment()) EmojiOnly.split(item.body) else null
-        body.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, if (emojis != null) baseSize * 2.6f else baseSize)
+        body.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, if (emojis != null) baseSize * 2.2f else baseSize)
         if (emojis != null) bubble.background = null
 
         val locked = Encryption.messageEncrypted(item, look.encryption) ||
@@ -370,7 +370,7 @@ class MessageAdapter(
                 image.isVisible = true
                 body.isVisible = false
                 image.load(EmojiOnly.notoUrl(emojis[0]), EmojiLoader.get(image.context)) {
-                    size((96 * density).toInt())
+                    size((64 * density).toInt())
                     listener(onError = { _, _ ->
                         image.isVisible = false
                         body.isVisible = true
@@ -665,6 +665,19 @@ class MessageAdapter(
             pv?.maxPhotoWidth = wide
             pv?.maxPhotoHeight = minOf((400 * d).toInt(), (dm.heightPixels * 0.6f).toInt())
             pv?.caption = body
+        } else if (emoji && image.isVisible) {
+            // Big animated emoji (Google Messages size ~64dp): a real square in the
+            // layout, scaled to fit, with normal spacing so it never draws under
+            // neighbouring messages.
+            lp.width = (64 * d).toInt()
+            lp.height = (64 * d).toInt()
+            lp.topMargin = (4 * d).toInt()
+            lp.bottomMargin = (4 * d).toInt()
+            image.scaleType = ImageView.ScaleType.FIT_CENTER
+            image.minimumHeight = 0
+            pv?.photoMode = false
+            pv?.caption = null
+            body.maxWidth = Int.MAX_VALUE
         } else {
             lp.width = (220 * d).toInt()
             lp.height = (160 * d).toInt()
