@@ -397,6 +397,12 @@ class MessageAdapter(
                     stableCacheKey(mediaUrl(item))
                 }
             }
+            // The attachment is the link/location preview itself: show just the card, no label.
+            item.hasAttachment() && !item.mimeType.startsWith("audio/") && !item.mimeType.startsWith("video/") &&
+                (SharedLocation.parse(item.body) != null || LinkUrls.firstHttpUrl(item.body)?.let { previewOf(it) } != null) -> {
+                image.isVisible = false
+                attachment.isVisible = false
+            }
             item.hasAttachment() -> {
                 image.isVisible = false
                 attachment.isVisible = true
@@ -714,9 +720,10 @@ class MessageAdapter(
             label.text = displayReadBy(row.message.statusText.trim())
             label.setTextColor(look.colors.light)
             val density = avatars.resources.displayMetrics.density
-            val size = (20 * density).toInt()
+            // 20dp faces inside a 1.5dp ring matching the background, slightly overlapped.
+            val ring = (1.5f * density).toInt().coerceAtLeast(1)
+            val size = (20 * density).toInt() + ring * 2
             val overlap = (6 * density).toInt()
-            val ring = (2 * density).toInt()
             names.take(4).forEachIndexed { index, name ->
                 val person = Participants.memberByName(conv, name)
                 avatars.addView(readByChip(avatars, person, name, size, ring, if (index == 0) 0 else -overlap))
@@ -731,7 +738,8 @@ class MessageAdapter(
             if (name.isNotBlank()) {
                 icon.isVisible = false
                 val density = avatars.resources.displayMetrics.density
-                avatars.addView(readByChip(avatars, other, name, (16 * density).toInt(), (2 * density).toInt(), 0))
+                val ring = (1.5f * density).toInt().coerceAtLeast(1)
+                avatars.addView(readByChip(avatars, other, name, (20 * density).toInt() + ring * 2, ring, 0))
                 avatars.contentDescription = displayReadBy(row.message.statusText.ifBlank { kind.label })
                 return
             }
@@ -873,7 +881,7 @@ class MessageAdapter(
         chip.layoutParams = LinearLayout.LayoutParams(size, size).apply { this.marginStart = marginStart }
         chip.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(0xFF0D0F12.toInt())
+            setColor(chrome().colors.surface)
         }
         val inner = size - ring * 2
         val initials = TextView(parent.context).apply {
@@ -883,7 +891,7 @@ class MessageAdapter(
             gravity = Gravity.CENTER
             text = Formatters.initials(display)
             setTextColor(Color.WHITE)
-            textSize = 8f
+            textSize = 9f
             typeface = Typeface.DEFAULT_BOLD
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL

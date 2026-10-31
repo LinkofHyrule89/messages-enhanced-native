@@ -11,6 +11,8 @@
 - System notices (missed calls, encryption changes, security/verification changes, scam warnings, group changes) show as centered notices instead of message bubbles.
 - RCS business rich cards, carousels and suggested replies/actions render when they arrive.
 - Older RCS location messages render as a location card.
+- Read-receipt faces are bigger (20dp, with a thin ring and slight overlap), for groups and 1:1.
+- No "[attachment]" label above link and location preview cards.
 
 ## v0.7.13
 
