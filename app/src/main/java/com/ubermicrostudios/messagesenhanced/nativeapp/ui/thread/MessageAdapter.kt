@@ -819,6 +819,22 @@ class MessageAdapter(
                 image.minimumHeight = 0
             }
             image.layoutParams = ilp
+            if (preview.isVideo) {
+                // YouTube: always a 16:9 centre-cropped frame (like the web card), re-applied
+                // once the card has its real width so the thumbnail's baked-in bars never show.
+                image.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                image.minimumHeight = 0
+                (image.getTag(R.id.link_image) as? View.OnLayoutChangeListener)?.let { image.removeOnLayoutChangeListener(it) }
+                val l = View.OnLayoutChangeListener { v, left, _, right, _, oldLeft, _, oldRight, _ ->
+                    if (right - left != oldRight - oldLeft) v.post { sizeTo(16, 9) }
+                }
+                image.setTag(R.id.link_image, l)
+                image.addOnLayoutChangeListener(l)
+                image.post { sizeTo(16, 9) }
+            } else {
+                (image.getTag(R.id.link_image) as? View.OnLayoutChangeListener)?.let { image.removeOnLayoutChangeListener(it) }
+                image.setTag(R.id.link_image, null)
+            }
             image.load(picture) {
                 crossfade(true)
                 stableCacheKey(picture)

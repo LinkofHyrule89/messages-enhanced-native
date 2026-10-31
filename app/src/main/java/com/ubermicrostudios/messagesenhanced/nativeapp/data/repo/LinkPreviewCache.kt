@@ -28,6 +28,7 @@ class LinkPreviewCache @Inject constructor(
             size > 100
     }
     private val inflight = HashSet<String>()
+    private val retryAt = HashMap<String, Long>()
 
     private val _revision = MutableStateFlow(0)
     val revision: StateFlow<Int> = _revision
@@ -43,6 +44,7 @@ class LinkPreviewCache @Inject constructor(
         synchronized(memory) {
             memory.clear()
             inflight.clear()
+            retryAt.clear()
         }
         _revision.value = _revision.value + 1
     }
@@ -50,12 +52,20 @@ class LinkPreviewCache @Inject constructor(
     fun request(url: String) {
         if (url.isBlank()) return
         synchronized(memory) {
-            if (memory.containsKey(url) || !inflight.add(url)) return
+            val due = retryAt[url]?.let { System.currentTimeMillis() >= it } == true
+            if (due) retryAt.remove(url)
+            if ((memory.containsKey(url) && !due) || !inflight.add(url)) return
         }
         scope.launch {
             try {
                 val preview = runCatchingCancellable { api.linkPreview(url) }.getOrNull()?.takeIf { it.usable() }
-                synchronized(memory) { memory[url] = preview }
+                // A YouTube fallback (oEmbed failed: title "YouTube", no author) is shown but
+                // not memoised, so the next bind asks the server again for the real title.
+                val fallback = preview != null && preview.isVideo && preview.title == "YouTube" && preview.description.isBlank()
+                synchronized(memory) {
+                    memory[url] = preview
+                    if (fallback) retryAt[url] = System.currentTimeMillis() + 30_000
+                }
                 _revision.value = _revision.value + 1
             } finally {
                 synchronized(memory) { inflight.remove(url) }

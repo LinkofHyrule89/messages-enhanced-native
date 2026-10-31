@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.23
+
+- YouTube previews look like the web card: a 16:9 centre-cropped thumbnail with no black bars, the real video title and channel name, then the youtube.com footer. If the title failed to load, the app asks again instead of keeping "YouTube". Other preview types are unchanged.
+
 ## v0.7.22
 
 - Link previews: YouTube and other video previews show a 16:9 centre-cropped thumbnail, so no black bars above and below. Web and Car Mode: the preview now sets the bubble width, so the image fills it edge to edge with no grey strip, and a YouTube title that failed to load is retried instead of staying as "YouTube".
