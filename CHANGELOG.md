@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.3
+
+- Link previews: when a preview card shows, the raw URL is hidden from the bubble (link-only messages show just the card). No preview, no change.
+- Group chats: sender avatars now load the contact's photo (matched to the group member by number or name), and the fallback letter comes from the name instead of the phone number's leading "1".
+
 ## v0.7.2
 
 - The go-to-newest button now shows whenever you are not at the bottom of a conversation (about two messages up), whether the newest messages are read, unread, or your own. The badge still counts only new incoming messages.

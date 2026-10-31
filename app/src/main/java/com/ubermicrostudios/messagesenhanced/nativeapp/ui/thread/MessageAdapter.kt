@@ -187,7 +187,7 @@ class MessageAdapter(
                 tapDetailText = b.tapDetailText,
                 tapDetailLock = b.tapDetailLock,
             )
-            bindSenderAvatar(row, b.senderAvatar)
+            bindSenderAvatar(row, b.senderAvatar, b.senderAvatarPhoto)
         }
     }
 
@@ -228,8 +228,12 @@ class MessageAdapter(
         sender.setTextColor(look.colors.light)
 
         bubble.background = bubbleDrawable(density, fromMe, row.pos, BubbleColors.fill(look.colors, fromMe))
-        linkify(body, item.body, if (fromMe) Color.WHITE else look.colors.light)
-        body.isVisible = item.body.isNotBlank()
+        // Hide the previewed URL when its card shows; no card -> keep the link.
+        val shownText = LinkUrls.firstHttpUrl(item.body)
+            ?.takeIf { previewOf(it) != null }
+            ?.let { LinkUrls.stripUrl(item.body, it) } ?: item.body
+        linkify(body, shownText, if (fromMe) Color.WHITE else look.colors.light)
+        body.isVisible = shownText.isNotBlank()
 
         val kind = if (item.isFromMe) MessageStatus.statusKind(item) else null
         val clock = Formatters.clockTime(item.timestampMs)
@@ -336,8 +340,9 @@ class MessageAdapter(
      * Mid-run rows keep an invisible spacer so bubbles stay aligned.
      * Reply status does not affect visibility — only [MessageRuns.Row.showSender].
      */
-    private fun bindSenderAvatar(row: MessageRuns.Row, avatar: TextView) {
+    private fun bindSenderAvatar(row: MessageRuns.Row, avatar: TextView, photo: ImageView) {
         val item = row.message
+        photo.visibility = View.GONE
         if (!conversation().isGroup || item.isFromMe) {
             avatar.visibility = View.GONE
             return
@@ -347,10 +352,26 @@ class MessageAdapter(
             avatar.text = ""
             return
         }
+        // Match the sender to a group participant (number first, then name) so
+        // we can load the same contact photo the chat list uses.
+        val conv = conversation()
+        val person = item.senderNumber.takeIf { it.any(Char::isDigit) }?.let { Participants.memberByName(conv, it) }
+            ?: item.senderName.takeIf { it.isNotBlank() }?.let { Participants.memberByName(conv, it) }
+        val display = person?.name?.ifBlank { null } ?: item.senderName.ifBlank { item.senderNumber }
         val seed = item.senderNumber.ifBlank { item.senderName }.ifBlank { "?" }
-        val label = seed.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "#"
+        // Initials from the name (not the phone number's leading "1").
+        val label = if (display.any(Char::isLetter)) Formatters.initials(display).take(1) else "#"
         avatar.visibility = View.VISIBLE
         avatar.text = label
+        val url = person?.let { Participants.personAvatarUrl(origin(), it) }
+        if (!url.isNullOrBlank()) {
+            CircleAvatars.clip(photo as ShapeableImageView)
+            photo.visibility = View.VISIBLE
+            photo.load(url) {
+                circleAvatar(url)
+                listener(onError = { _, _ -> photo.visibility = View.GONE })
+            }
+        }
         val bg = ContextCompat.getDrawable(avatar.context, R.drawable.bg_sender_avatar)?.mutate()
         bg?.setTint(Participants.avatarColor(seed))
         avatar.background = bg

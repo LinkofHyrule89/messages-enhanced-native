@@ -32,6 +32,17 @@ object LinkUrls {
         return out
     }
 
+    /** [text] without the first link whose normalized url is [url], tidied. */
+    fun stripUrl(text: String, url: String): String {
+        var done = false
+        val sb = StringBuilder()
+        for (part in parts(text)) {
+            if (!done && part.url == url) { done = true; continue }
+            sb.append(part.text)
+        }
+        return sb.toString().replace(Regex("[ \t]{2,}"), " ").trim()
+    }
+
     /** First http(s) URL in [text], or null. Bare hosts are normalized to https. */
     fun firstHttpUrl(text: String): String? {
         for (part in parts(text)) {
