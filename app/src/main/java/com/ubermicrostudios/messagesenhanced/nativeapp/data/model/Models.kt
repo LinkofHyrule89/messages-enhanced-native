@@ -401,6 +401,7 @@ data class LinkPreviewDto(
     val description: String = "",
     @SerialName("image_url") val imageUrl: String = "",
     @SerialName("site_name") val siteName: String = "",
+    @SerialName("icon_url") val iconUrl: String = "",
     val domain: String = "",
 ) {
     fun usable(): Boolean =
@@ -415,6 +416,9 @@ data class LinkPreviewDto(
     }
 
     fun siteLabel(): String = siteName.ifBlank { domain }
+
+    /** Footer label, Google Messages style: the bare domain ("x.com"), else the site name. */
+    fun footerLabel(): String = domain.trim().removePrefix("www.").ifBlank { siteName.trim() }
 }
 
 @Serializable

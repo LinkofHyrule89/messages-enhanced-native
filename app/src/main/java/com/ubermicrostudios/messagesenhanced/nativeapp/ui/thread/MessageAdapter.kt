@@ -429,6 +429,7 @@ class MessageAdapter(
         }
 
         bindLink(item.body, linkCard, linkImage, linkSite, linkTitle, linkDesc)
+        layoutEdgeToEdge(item, bubble, image, body, linkCard, sender, emojis != null)
         bindReceipt(row, kind, receipt, receiptAvatars, receiptLabel, receiptIcon, look)
         bindTapDetail(item, locked, tapDetail, tapDetailText, tapDetailLock)
         if (image.isVisible && emojis == null) {
@@ -616,6 +617,61 @@ class MessageAdapter(
         avatar.background = bg
     }
 
+    /**
+     * Google Messages layout: photos and link cards run edge to edge across the bubble
+     * (rounded by the bubble's own outline), with the caption/time below inside it.
+     */
+    private fun layoutEdgeToEdge(
+        item: MessageDto,
+        bubble: View,
+        image: ImageView,
+        body: TextView,
+        linkCard: View,
+        sender: TextView,
+        emoji: Boolean,
+    ) {
+        val dm = bubble.resources.displayMetrics
+        val d = dm.density
+        val wide = minOf((300 * d).toInt(), (dm.widthPixels * 0.66f).toInt())
+        val quoteShown = (bubble.findViewById<View>(R.id.reply_quote)?.isVisible == true)
+        val senderInside = sender.parent === bubble && sender.isVisible
+        val photo = image.isVisible && !emoji && bubble.background != null
+        val lp = image.layoutParams as LinearLayout.LayoutParams
+        if (photo) {
+            lp.width = wide
+            lp.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            lp.marginStart = (-12 * d).toInt()
+            lp.marginEnd = (-12 * d).toInt()
+            lp.topMargin = if (quoteShown || senderInside) 0 else (-8 * d).toInt()
+            lp.bottomMargin = if (body.isVisible) (8 * d).toInt() else (4 * d).toInt()
+            image.adjustViewBounds = true
+            image.scaleType = ImageView.ScaleType.FIT_CENTER
+            image.maxHeight = minOf((400 * d).toInt(), (dm.heightPixels * 0.6f).toInt())
+            image.minimumHeight = (120 * d).toInt()
+        } else {
+            lp.width = (220 * d).toInt()
+            lp.height = (160 * d).toInt()
+            lp.marginStart = 0
+            lp.marginEnd = 0
+            lp.topMargin = 0
+            lp.bottomMargin = 0
+            image.adjustViewBounds = false
+            image.scaleType = ImageView.ScaleType.CENTER_CROP
+            image.maxHeight = Int.MAX_VALUE
+            image.minimumHeight = 0
+        }
+        image.layoutParams = lp
+        if (linkCard.isVisible) {
+            val cp = linkCard.layoutParams as LinearLayout.LayoutParams
+            cp.width = wide
+            val first = !body.isVisible && !quoteShown && !senderInside && !image.isVisible
+            cp.topMargin = if (first) (-8 * d).toInt() else (8 * d).toInt()
+            cp.bottomMargin = (2 * d).toInt()
+            linkCard.layoutParams = cp
+        }
+        bubble.clipToOutline = photo || linkCard.isVisible
+    }
+
     private fun bindQuote(root: View, item: MessageDto) {
         val box = root.findViewById<View>(R.id.reply_quote) ?: return
         val name = root.findViewById<TextView>(R.id.reply_quote_name)
@@ -688,9 +744,23 @@ class MessageAdapter(
                 listener(onSuccess = { _, _ -> image.minimumHeight = 0 })
             }
         }
-        val siteLabel = preview.siteLabel()
+        val siteLabel = preview.footerLabel()
         site.isVisible = siteLabel.isNotBlank()
         site.text = siteLabel
+        val icon = (card as? ViewGroup)?.findViewById<ImageView>(R.id.link_icon)
+        if (icon != null) {
+            val iconSrc = if (preview.iconUrl.isBlank()) null else imageOf(preview.copy(imageUrl = preview.iconUrl))
+            if (iconSrc.isNullOrBlank() || siteLabel.isBlank()) {
+                icon.isVisible = false
+                icon.setImageDrawable(null)
+            } else {
+                icon.isVisible = true
+                icon.load(iconSrc) {
+                    stableCacheKey(iconSrc)
+                    listener(onError = { _, _ -> icon.isVisible = false })
+                }
+            }
+        }
         title.isVisible = preview.title.isNotBlank()
         title.text = preview.title
         desc.isVisible = preview.description.isNotBlank()
