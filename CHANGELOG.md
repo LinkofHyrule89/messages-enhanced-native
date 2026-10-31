@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.7
+
+- @mentions are highlighted inside the message box as you type, in the same accent chip style as sent mentions. Backspace still trims the last name, then removes the mention.
+
 ## v0.7.6
 
 - Share to Messages Enhanced: the app now appears in Android's share menu for text, photos, videos, and files (one or many). Sharing opens the Share screen (recent conversations, contacts, search) with the content ready. Picking one conversation opens its composer with everything attached. Nothing sends until you tap Send.

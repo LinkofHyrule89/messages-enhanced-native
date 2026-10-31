@@ -872,9 +872,24 @@ class ThreadFragment : Fragment() {
                     edit.setSelection(p.second.coerceIn(0, e.length))
                     applying = false
                 }
+                if (e != null) highlightMentions(e)
                 if (!applying) updateMentionPicker()
             }
         })
+    }
+
+    /** Chip-style highlight for valid NBSP@NameNBSP mentions in the composer. */
+    private fun highlightMentions(e: android.text.Editable) {
+        e.getSpans(0, e.length, ComposerMentionSpan::class.java).forEach { e.removeSpan(it) }
+        val ranges = Mentions.ranges(e.toString())
+        if (ranges.isEmpty()) return
+        val accent = requireContext().getColor(R.color.accent)
+        val density = resources.displayMetrics.density
+        for (r in ranges) {
+            val end = (r.last + 1).coerceAtMost(e.length)
+            if (r.first < 0 || r.first >= end) continue
+            e.setSpan(ComposerMentionSpan(0x33808080, accent, density), r.first, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
     }
 
     private fun updateMentionPicker() {
