@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.18
+
+- Fix in-app update: v0.7.17 shipped with the v0.7.16 version number (versionCode 32), so the updater correctly refused it as "not newer". Now versionCode 34 / 0.7.18. Includes all v0.7.17 link preview fixes.
+
 ## v0.7.17
 
 - Link previews fill the bubble edge to edge: tall/portrait images and video posts (e.g. X) no longer show grey side bars; height follows the image, capped at ~60% of the screen (400dp), cropping minimally past the cap.
