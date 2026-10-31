@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.19
+
+- Reply quotes match the phone app: the quote sets the bubble width, so a short reply no longer squeezes a one-line quote; long quotes use the full bubble width and clamp at 4 lines (line breaks kept). Darker inset block, regular-weight name, no accent bar.
+- Group sender names are gold, as on the phone.
+- Squeeze cause: the quote's width was set only on the quote block, which the bubble's wrap measurement ignored; the bubble itself now takes the quote's width.
+
 ## v0.7.18
 
 - Fix in-app update: v0.7.17 shipped with the v0.7.16 version number (versionCode 32), so the updater correctly refused it as "not newer". Now versionCode 34 / 0.7.18. Includes all v0.7.17 link preview fixes.

@@ -60,6 +60,8 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.util.ThemeColors
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhonesInText
 
+private const val SENDER_GOLD = 0xFFF2C94C.toInt()
+
 class MessageAdapter(
     private val mediaUrl: (MessageDto) -> String,
     private val previewOf: (String) -> LinkPreviewDto?,
@@ -300,7 +302,7 @@ class MessageAdapter(
         val senderName = item.senderName.ifBlank { item.senderNumber }
         sender.isVisible = row.showSender && senderName.isNotBlank()
         sender.text = formatPhoneForDisplay(senderName)
-        sender.setTextColor(look.colors.light)
+        sender.setTextColor(SENDER_GOLD) // group sender names are gold, as on the phone
 
         bubble.background = bubbleDrawable(density, fromMe, row.pos, BubbleColors.fill(look.colors, fromMe))
         // Hide the previewed URL when its card shows; no card -> keep the link.
@@ -688,7 +690,15 @@ class MessageAdapter(
         val nameW = if (name.isVisible) name.paint.measureText(name.text.toString()) else 0f
         val textW = text.paint.measureText(text.text.toString().replace('\n', ' '))
         val pad = box.paddingLeft + box.paddingRight
-        box.minimumWidth = QuoteWidth.intrinsic(nameW, textW, pad)
+        val quoteW = QuoteWidth.intrinsic(nameW, textW, pad)
+        box.minimumWidth = quoteW
+        // The bubble itself must take the quote's width: ConstraintLayout's "wrap" pass
+        // measures the bubble from its text, so a short reply squeezed the quote. The
+        // bubble's minimum width is clamped to the available width by the parent spec,
+        // so long quotes fill the max bubble width and clamp their lines.
+        val lp = box.layoutParams as? ViewGroup.MarginLayoutParams
+        val bubble = box.parent as? View ?: return
+        bubble.minimumWidth = quoteW + (lp?.marginStart ?: 0) + (lp?.marginEnd ?: 0)
     }
 
     private fun bindQuote(root: View, item: MessageDto) {
@@ -697,6 +707,8 @@ class MessageAdapter(
         val text = root.findViewById<TextView>(R.id.reply_quote_text)
         val replyId = item.replyToId
         if (replyId.isBlank()) {
+            (box.parent as? View)?.minimumWidth = 0
+            box.minimumWidth = 0
             box.isVisible = false
             box.setOnClickListener(null)
             box.isClickable = false

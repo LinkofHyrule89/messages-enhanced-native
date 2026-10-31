@@ -92,16 +92,17 @@
                 android:id="@+id/reply_quote_name"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:maxLines="3"
+                android:maxLines="1"
+                android:ellipsize="end"
                 android:textColor="#C7FFFFFF"
-                android:textSize="12sp" />
+                android:textSize="13sp" />
 
             <TextView
                 android:id="@+id/reply_quote_text"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
-                android:maxLines="3"
+                android:maxLines="4"
                 android:textColor="#E0FFFFFF"
                 android:textSize="12sp" />
         </LinearLayout>
