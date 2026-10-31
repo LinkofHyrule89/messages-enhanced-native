@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.9
+
+- The @mention picker now looks like Google Messages: a rounded dark card floating just above the composer, with a round contact photo (or initials) and "@Full Name" for each member. It filters as you type and closes when you tap outside it.
+
 ## v0.7.8
 
 - When someone @mentions you, the notification now says so: "<Sender> mentioned you", with the group name and the message below it. If message text is hidden, it shows only "<Sender> mentioned you". Mentions use their own high-importance "Mentions" notification channel and keep the sender photo and group icon.

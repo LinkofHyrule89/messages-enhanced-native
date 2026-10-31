@@ -40,6 +40,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.LinearSmoothScroller
 import coil.load
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.circleAvatar
 import com.ubermicrostudios.messagesenhanced.nativeapp.R
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDto
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.repo.LinkPreviewCache
@@ -871,6 +872,63 @@ class ThreadFragment : Fragment() {
             .distinct()
     }
 
+    private fun mentionPeople(): Map<String, com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ParticipantDto> =
+        Participants.parse(viewModel.state.value.participantsJson)
+            .filter { !it.me }
+            .associateBy { it.name.trim().ifBlank { it.firstName.trim() } }
+
+    private class MentionPickerAdapter(
+        private val names: List<String>,
+        private val people: Map<String, com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ParticipantDto>,
+        private val origin: String,
+        private val density: Float,
+    ) : android.widget.BaseAdapter() {
+        override fun getCount() = names.size
+        override fun getItem(position: Int) = names[position]
+        override fun getItemId(position: Int) = position.toLong()
+        override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+            val ctx = parent.context
+            val px = { dp: Int -> (dp * density).toInt() }
+            val row = (convertView as? android.widget.LinearLayout) ?: android.widget.LinearLayout(ctx).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(px(20), px(10), px(20), px(10))
+                addView(android.widget.ImageView(ctx), android.widget.LinearLayout.LayoutParams(px(32), px(32)))
+                addView(
+                    android.widget.TextView(ctx).apply {
+                        setTextColor(0xFFE3E3E3.toInt())
+                        textSize = 16f
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                    },
+                    android.widget.LinearLayout.LayoutParams(0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = px(16) },
+                )
+            }
+            val name = names[position]
+            val photo = row.getChildAt(0) as android.widget.ImageView
+            (row.getChildAt(1) as android.widget.TextView).text = "@$name"
+            val p = people[name]
+            val fallback = com.ubermicrostudios.messagesenhanced.nativeapp.util.InitialsBitmap.of(name, p?.id?.ifBlank { name } ?: name, px(32))
+            photo.setImageBitmap(fallback)
+            val url = p?.let {
+                Participants.avatarUrl(
+                    origin,
+                    participantId = it.participantId.ifBlank { it.participantIdCamel }.ifBlank { it.id },
+                    contactId = it.contactId.ifBlank { it.contactIdCamel },
+                    phone = it.number.ifBlank { it.phone },
+                )
+            }
+            if (url != null) {
+                photo.load(url) {
+                    circleAvatar(url)
+                    placeholder(android.graphics.drawable.BitmapDrawable(ctx.resources, fallback))
+                    error(android.graphics.drawable.BitmapDrawable(ctx.resources, fallback))
+                }
+            }
+            return row
+        }
+    }
+
     /** Google-style @mentions: picker while typing "@", backspace trims last name then the mention. */
     private fun bindMentions() {
         val edit = binding.composer
@@ -924,10 +982,21 @@ class ThreadFragment : Fragment() {
             return
         }
         val popup = mentionPopup ?: android.widget.ListPopupWindow(requireContext()).also { mentionPopup = it }
-        popup.anchorView = edit
-        popup.setAdapter(android.widget.ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, names.map { "@$it" }))
-        popup.width = edit.width.coerceAtLeast((240 * resources.displayMetrics.density).toInt())
+        val density = resources.displayMetrics.density
+        // Google Messages style: rounded dark card above the composer, photo + "@Full Name" rows.
+        val anchor = binding.composerDock
+        popup.anchorView = anchor
+        popup.setBackgroundDrawable(
+            android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xFF1E1F22.toInt())
+                cornerRadius = 24f * density
+            },
+        )
+        popup.setAdapter(MentionPickerAdapter(names, mentionPeople(), viewModel.baseUrl.origin(), density))
+        popup.horizontalOffset = (8 * density).toInt()
+        popup.width = (anchor.width - (16 * density).toInt()).coerceAtLeast((240 * density).toInt())
         popup.isModal = false
+        popup.setDropDownGravity(android.view.Gravity.START)
         popup.inputMethodMode = android.widget.PopupWindow.INPUT_METHOD_NEEDED
         popup.setOnItemClickListener { _, _, pos, _ ->
             val cur = edit.text?.toString().orEmpty()
