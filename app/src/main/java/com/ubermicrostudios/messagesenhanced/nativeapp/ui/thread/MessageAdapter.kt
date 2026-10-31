@@ -805,7 +805,9 @@ class MessageAdapter(
             fun sizeTo(iw: Int, ih: Int) {
                 val w = image.width.takeIf { it > 0 } ?: card.layoutParams?.width?.takeIf { it > 0 } ?: return
                 if (iw <= 0 || ih <= 0) return
-                val h = (w.toLong() * ih / iw).toInt().coerceIn((60 * dm.density).toInt(), cap)
+                // Videos (YouTube 4:3 thumbnails carry baked-in black bars): show 16:9,
+                // centre-cropped, so the bars fall outside the frame.
+                val h = (if (preview.isVideo) w.toLong() * 9 / 16 else w.toLong() * ih / iw).toInt().coerceIn((60 * dm.density).toInt(), cap)
                 if (ilp.height != h) { ilp.height = h; image.layoutParams = ilp }
             }
             if (preview.imageWidth > 0 && preview.imageHeight > 0) {

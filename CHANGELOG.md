@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.22
+
+- Link previews: YouTube and other video previews show a 16:9 centre-cropped thumbnail, so no black bars above and below. Web and Car Mode: the preview now sets the bubble width, so the image fills it edge to edge with no grey strip, and a YouTube title that failed to load is retried instead of staying as "YouTube".
+
 ## v0.7.21
 
 - Big emoji: emoji-only messages now show at about the phone app size (64dp animated emoji, smaller large-text emoji) and take real layout space with normal spacing, so they no longer overlap the message above or below. Web, Car Mode and Android.
