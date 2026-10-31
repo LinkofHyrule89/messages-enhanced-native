@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.5
+
+- @mentions: mentions in received messages show as rounded chips, for both full names and first names, like Google Messages.
+- Typing @ in a group chat opens a member picker that filters as you type. Picking a member inserts their full name. Backspace removes the last name first, then the whole mention.
+- Notifications: group chats use the group icon, and each sender shows their contact photo (circle-cropped), falling back to initials. Group notification titles show just the group name.
+
 ## v0.7.4
 
 - The "Disconnected from Google Messages" banner now waits for 45 seconds of continuous disconnection, so brief server restarts and network blips no longer flash it. It clears as soon as the connection returns. "Sign in needed" still shows right away.

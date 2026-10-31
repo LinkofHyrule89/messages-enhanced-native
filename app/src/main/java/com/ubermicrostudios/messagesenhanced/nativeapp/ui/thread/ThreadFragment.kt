@@ -1,5 +1,6 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread
 
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.Mentions
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
@@ -270,6 +271,7 @@ class ThreadFragment : Fragment() {
         binding.replyCancel.setOnClickListener { viewModel.clearReply() }
 
         bindComposerPaste()
+        bindMentions()
         binding.composer.doAfterTextChanged { viewModel.onDraft(it?.toString().orEmpty()) }
         binding.composer.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEND) {
@@ -834,6 +836,73 @@ class ThreadFragment : Fragment() {
         syncBack()
     }
 
+    private var mentionPopup: android.widget.ListPopupWindow? = null
+
+    private fun mentionNames(): List<String> {
+        val st = viewModel.state.value
+        if (!st.isGroup) return emptyList()
+        return Participants.parse(st.participantsJson)
+            .filter { !it.me && !it.hidden }
+            .map { it.name.trim().ifBlank { it.firstName.trim() } }
+            .filter { it.isNotBlank() && !it.all { c -> c.isDigit() || c in "+()- " } }
+            .distinct()
+    }
+
+    /** Google-style @mentions: picker while typing "@", backspace trims last name then the mention. */
+    private fun bindMentions() {
+        val edit = binding.composer
+        var pending: Pair<String, Int>? = null
+        var applying = false
+        edit.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
+                pending = if (!applying && s != null && count == 1 && after == 0) {
+                    Mentions.backspace(s.toString(), start + 1)
+                } else {
+                    null
+                }
+            }
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(e: android.text.Editable?) {
+                val p = pending
+                if (p != null && e != null) {
+                    pending = null
+                    applying = true
+                    e.replace(0, e.length, p.first)
+                    edit.setSelection(p.second.coerceIn(0, e.length))
+                    applying = false
+                }
+                if (!applying) updateMentionPicker()
+            }
+        })
+    }
+
+    private fun updateMentionPicker() {
+        val edit = binding.composer
+        val text = edit.text?.toString().orEmpty()
+        val q = Mentions.query(text, edit.selectionStart)
+        val names = if (q == null) emptyList() else Mentions.matches(mentionNames(), q.second)
+        if (names.isEmpty()) {
+            mentionPopup?.dismiss()
+            return
+        }
+        val popup = mentionPopup ?: android.widget.ListPopupWindow(requireContext()).also { mentionPopup = it }
+        popup.anchorView = edit
+        popup.setAdapter(android.widget.ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, names.map { "@$it" }))
+        popup.width = edit.width.coerceAtLeast((240 * resources.displayMetrics.density).toInt())
+        popup.isModal = false
+        popup.inputMethodMode = android.widget.PopupWindow.INPUT_METHOD_NEEDED
+        popup.setOnItemClickListener { _, _, pos, _ ->
+            val cur = edit.text?.toString().orEmpty()
+            val res = Mentions.insert(cur, edit.selectionStart, names[pos])
+            popup.dismiss()
+            if (res != null) {
+                edit.setText(res.first)
+                edit.setSelection(res.second.coerceIn(0, res.first.length))
+            }
+        }
+        if (!popup.isShowing) popup.show()
+    }
+
     private fun bindComposerPaste() {
         ViewCompat.setOnReceiveContentListener(binding.composer, ComposerPaste.MIME_TYPES) { _, payload ->
             val split = payload.partition { item -> item.uri != null }
@@ -942,6 +1011,8 @@ class ThreadFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        mentionPopup?.dismiss()
+        mentionPopup = null
         if (serverErrorShown == true) {
             // Drop the line before notifying, so the list does not still see it as showing.
             _binding?.error?.isVisible = false

@@ -77,7 +77,7 @@ class HealthBannerTest {
         val other = HealthBanner.banner(
             HealthResponse(checks = listOf(HealthCheckDto(name = "VPN", ok = false, downSinceMs = 5_000))),
             null,
-            nowMs = 35_000,
+            nowMs = 55_000,
             clock,
             null,
         )

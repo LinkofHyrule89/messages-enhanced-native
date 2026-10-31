@@ -7,6 +7,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.text.SpannableStringBuilder
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.Mentions
 import android.text.Spanned
 import android.text.TextPaint
 import android.text.method.LinkMovementMethod
@@ -497,10 +498,23 @@ class MessageAdapter(
         icon.contentDescription = displayReadBy(row.message.statusText.ifBlank { kind.label })
     }
 
+    private fun applyMentionChips(view: TextView, sb: SpannableStringBuilder, ranges: List<IntRange>, color: Int) {
+        val density = view.resources.displayMetrics.density
+        for (r in ranges) {
+            if (r.last >= sb.length) continue
+            sb.setSpan(MentionChipSpan(0x33FFFFFF, color, density), r.first, r.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }
+
     private fun linkify(view: TextView, text: String, linkColor: Int) {
         val parts = LinkUrls.parts(text)
+        val mentions = Mentions.ranges(text)
         if (parts.none { it.url != null }) {
-            view.text = text
+            if (mentions.isEmpty()) {
+                view.text = text
+            } else {
+                view.text = SpannableStringBuilder(text).also { applyMentionChips(view, it, mentions, linkColor) }
+            }
             view.movementMethod = null
             return
         }
@@ -529,6 +543,7 @@ class MessageAdapter(
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
             )
         }
+        if (spanned.toString() == text) applyMentionChips(view, spanned, mentions, linkColor)
         view.text = spanned
         view.movementMethod = LinkMovementMethod.getInstance()
         view.highlightColor = Color.TRANSPARENT

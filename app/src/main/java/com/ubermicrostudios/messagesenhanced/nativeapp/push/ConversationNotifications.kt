@@ -259,16 +259,19 @@ class ConversationNotifications @Inject constructor(
         if (line.fromMe) return self
         val name = formatPhoneForDisplay(line.senderName).ifBlank { selfName }
         val builder = Person.Builder().setName(name).setKey(line.senderKey.ifBlank { name })
-        icons[line.avatarUrl]?.let { builder.setIcon(IconCompat.createWithBitmap(it)) }
+        val bitmap = icons[line.avatarUrl] ?: initialsBitmap(name, line.senderKey.ifBlank { name })
+        builder.setIcon(IconCompat.createWithBitmap(bitmap))
         return builder.build()
     }
 
     private fun largeIcon(thread: NotifThread, icons: Map<String, Bitmap>): IconCompat? {
         val bitmap = if (thread.isGroup) {
             icons[thread.groupAvatarUrl]
+                ?: initialsBitmap(formatPhoneForDisplay(thread.title), "conv:" + thread.conversationId)
         } else {
-            val url = thread.lines.lastOrNull { !it.fromMe && it.avatarUrl.isNotBlank() }?.avatarUrl
-            url?.let { icons[it] }
+            val line = thread.lines.lastOrNull { !it.fromMe }
+            line?.avatarUrl?.takeIf { it.isNotBlank() }?.let { icons[it] }
+                ?: line?.let { initialsBitmap(formatPhoneForDisplay(it.senderName), it.senderKey) }
         }
         return bitmap?.let { IconCompat.createWithBitmap(it) }
     }
@@ -404,6 +407,31 @@ class ConversationNotifications @Inject constructor(
         if (iconCache.size > ICON_CACHE) iconCache.clear()
         iconCache[url] = circular
         return circular
+    }
+
+    /** Circle with initials (or a dot for numbers) when no photo loads. */
+    private fun initialsBitmap(name: String, key: String): Bitmap {
+        val out = Bitmap.createBitmap(ICON_PX, ICON_PX, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(out)
+        val palette = intArrayOf(0xFF5C6BC0.toInt(), 0xFF26A69A.toInt(), 0xFFEF5350.toInt(), 0xFFAB47BC.toInt(),
+            0xFF42A5F5.toInt(), 0xFFFFA726.toInt(), 0xFF66BB6A.toInt(), 0xFF8D6E63.toInt())
+        val bg = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        bg.color = palette[Math.floorMod(key.hashCode(), palette.size)]
+        canvas.drawCircle(ICON_PX / 2f, ICON_PX / 2f, ICON_PX / 2f, bg)
+        val words = name.trim().split(Regex("\\s+")).filter { it.firstOrNull()?.isLetter() == true }
+        val initials = when {
+            words.isEmpty() -> "#"
+            words.size == 1 -> words[0].take(1)
+            else -> words.first().take(1) + words.last().take(1)
+        }.uppercase()
+        val text = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        text.color = android.graphics.Color.WHITE
+        text.textSize = ICON_PX * 0.42f
+        text.textAlign = android.graphics.Paint.Align.CENTER
+        text.isFakeBoldText = true
+        val y = ICON_PX / 2f - (text.descent() + text.ascent()) / 2f
+        canvas.drawText(initials, ICON_PX / 2f, y, text)
+        return out
     }
 
     private fun mutableFlags(): Int {

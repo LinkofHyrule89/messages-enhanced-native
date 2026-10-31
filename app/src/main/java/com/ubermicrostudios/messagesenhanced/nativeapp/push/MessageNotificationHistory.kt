@@ -274,7 +274,11 @@ object MessageNotificationPayload {
         val conversationId = conversationKey(data)
         if (conversationId.isBlank()) return null
         val personRaw = first(data, "person", "sender_name", "sender")
-        val titleRaw = first(data, "title").ifBlank { personRaw }
+        val titleRaw = first(data, "title").ifBlank { personRaw }.let { t ->
+            // Server group titles are "Sender · Group"; the conversation title is the group.
+            val prefix = "$personRaw · "
+            if (personRaw.isNotBlank() && t.startsWith(prefix) && t.length > prefix.length) t.removePrefix(prefix) else t
+        }
         val placeholder = hiddenBody.ifBlank { "New message" }
         val rawBody = first(data, "body", "text", "message")
         val text = when {
