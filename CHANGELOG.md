@@ -13,6 +13,7 @@
 - Older RCS location messages render as a location card.
 - Read-receipt faces are bigger (20dp, with a thin ring and slight overlap), for groups and 1:1.
 - No "[attachment]" label above link and location preview cards.
+- Link preview images are never cropped: full image at its own shape, capped at about 60% of the screen (400dp).
 
 ## v0.7.13
 

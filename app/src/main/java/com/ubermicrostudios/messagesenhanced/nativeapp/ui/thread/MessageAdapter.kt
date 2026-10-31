@@ -678,9 +678,14 @@ class MessageAdapter(
             image.setImageDrawable(null)
         } else {
             image.isVisible = true
+            // Full image, never cropped: fit the bubble width, cap at ~60% of the screen / 400dp.
+            val dm = image.resources.displayMetrics
+            image.maxHeight = minOf((400 * dm.density).toInt(), (dm.heightPixels * 0.6f).toInt())
+            image.minimumHeight = (120 * dm.density).toInt() // placeholder until it loads
             image.load(picture) {
                 crossfade(true)
                 stableCacheKey(picture)
+                listener(onSuccess = { _, _ -> image.minimumHeight = 0 })
             }
         }
         val siteLabel = preview.siteLabel()
