@@ -214,6 +214,12 @@ interface MessagesApi {
     @POST("/api/app/conversations/archive")
     suspend fun archiveConversation(@Body body: ArchiveRequest): Response<ResponseBody>
 
+    @POST("/api/app/conversations/block")
+    suspend fun blockConversation(@Body body: com.ubermicrostudios.messagesenhanced.nativeapp.data.model.BlockRequest): Response<ResponseBody>
+
+    @POST("/api/app/messages/action")
+    suspend fun messageAction(@Body body: com.ubermicrostudios.messagesenhanced.nativeapp.data.model.MessageActionRequest): Response<ResponseBody>
+
     @POST("/api/app/conversations/trash")
     suspend fun trashConversation(@Body body: ConversationIdRequest): Response<ResponseBody>
 

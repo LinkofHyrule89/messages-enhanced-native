@@ -57,6 +57,8 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.util.ComposerPlan
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.EmojiCatalog
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Encryption
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.LinkUrls
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.LinkCleaner
+import com.ubermicrostudios.messagesenhanced.nativeapp.ui.effects.ScreenEffects
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.MessageActions
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.MessageRuns
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
@@ -226,7 +228,21 @@ class ThreadFragment : Fragment() {
                     origin = viewModel.baseUrl.origin(),
                     participantsJson = state.participantsJson,
                 )
+                // Ask the phone for the full-resolution original (best effort, quiet).
+                if (message.mimeType.startsWith("image/")) viewModel.messageAction(message.messageId, "fullsize", quiet = true)
             },
+            onMessageAction = { message, action ->
+                if (action == "resend") {
+                    AlertDialog.Builder(requireContext())
+                        .setMessage(R.string.resend_confirm)
+                        .setNegativeButton(R.string.cancel, null)
+                        .setPositiveButton(android.R.string.ok) { _, _ -> viewModel.messageAction(message.messageId, "resend") }
+                        .show()
+                } else {
+                    viewModel.messageAction(message.messageId, action)
+                }
+            },
+            animatedEmoji = { appPrefs.animatedEmojis },
         )
         gestures = ThreadGestures(
             recyclerView = binding.messages,
@@ -275,6 +291,7 @@ class ThreadFragment : Fragment() {
         binding.replyCancel.setOnClickListener { viewModel.clearReply() }
 
         bindComposerPaste()
+        bindCleanLinks()
         bindMentions()
         binding.composer.doAfterTextChanged { viewModel.onDraft(it?.toString().orEmpty()) }
         binding.composer.setOnEditorActionListener { _, actionId, _ ->
@@ -341,6 +358,7 @@ class ThreadFragment : Fragment() {
             "${it.messageId}\u0000${it.status}\u0000${it.statusText}\u0000${it.reactions}\u0000${it.edited}\u0000${it.body.hashCode()}"
         }
         val jump = signature != messageSignature
+        maybeScreenEffect(state)
         messageSignature = signature
         val jumpId = state.jumpMessageId
         adapter.submitList(rows) {
@@ -526,6 +544,7 @@ class ThreadFragment : Fragment() {
                 pin = { viewModel.togglePin() },
                 archive = { viewModel.archiveConversation() },
                 trash = { confirmTrash(viewModel.state.value) },
+                block = { report -> confirmBlock(viewModel.state.value, report) },
                 settings = {
                     startActivity(Intent(requireContext(), SettingsActivity::class.java))
                 },
@@ -559,6 +578,84 @@ class ThreadFragment : Fragment() {
             .setMessage(getString(R.string.trash_confirm, name))
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.menu_trash) { _, _ -> viewModel.trashConversation() }
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(0xFFFF8589.toInt())
+        }
+        dialog.show()
+    }
+
+    private val effectSeen = HashSet<String>()
+    private var effectPrimedFor = ""
+
+    /** Play a holiday/keyword effect once for a fresh message in the open thread. */
+    private fun maybeScreenEffect(state: ThreadUiState) {
+        if (state.conversationId.isBlank() || state.messages.isEmpty()) return
+        if (effectPrimedFor != state.conversationId) {
+            effectPrimedFor = state.conversationId
+            effectSeen.clear()
+            state.messages.forEach { effectSeen += it.messageId }
+            return
+        }
+        val now = System.currentTimeMillis()
+        var pick: ScreenEffects.Kind? = null
+        for (m in state.messages) {
+            if (!effectSeen.add(m.messageId)) continue
+            if (m.timestampMs > 0L && now - m.timestampMs > 60_000L) continue
+            ScreenEffects.detect(m.body)?.let { pick = it }
+        }
+        val kind = pick ?: return
+        if (!appPrefs.holidayAnimations) return
+        activity?.let { ScreenEffects.play(it, kind) }
+    }
+
+    /** "Clean links" in the composer's long-press / selection menu. */
+    private fun bindCleanLinks() {
+        val itemId = View.generateViewId()
+        val cb = object : android.view.ActionMode.Callback {
+            override fun onCreateActionMode(mode: android.view.ActionMode, menu: android.view.Menu): Boolean {
+                if (LinkUrls.firstHttpUrl(binding.composer.text?.toString().orEmpty()) != null) {
+                    menu.add(android.view.Menu.NONE, itemId, 200, R.string.clean_links)
+                }
+                return true
+            }
+            override fun onPrepareActionMode(mode: android.view.ActionMode, menu: android.view.Menu) = false
+            override fun onActionItemClicked(mode: android.view.ActionMode, item: android.view.MenuItem): Boolean {
+                if (item.itemId != itemId) return false
+                cleanComposerLinks()
+                mode.finish()
+                return true
+            }
+            override fun onDestroyActionMode(mode: android.view.ActionMode) {}
+        }
+        binding.composer.customSelectionActionModeCallback = cb
+        binding.composer.customInsertionActionModeCallback = cb
+    }
+
+    private fun cleanComposerLinks() {
+        val edit = binding.composer
+        val text = edit.text ?: return
+        val res = LinkCleaner.cleanText(text.toString(), appPrefs.cleanLinksRule)
+        if (res.count == 0) {
+            toast(getString(R.string.clean_links_none))
+            return
+        }
+        // Replace each changed URL in place so mention spans elsewhere survive.
+        for ((from, to) in LinkCleaner.changes(text.toString(), appPrefs.cleanLinksRule).asReversed()) {
+            text.replace(from.first, from.last + 1, to)
+        }
+        edit.setSelection(text.length)
+        toast(getString(R.string.clean_links_done, res.count))
+    }
+
+    private fun confirmBlock(state: ThreadUiState, report: Boolean) {
+        val name = formatPhoneForDisplay(state.title.ifBlank { getString(R.string.thread_title) })
+        val dialog = AlertDialog.Builder(requireContext())
+            .setMessage(getString(if (report) R.string.block_report_confirm else R.string.block_confirm, name))
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(if (report) R.string.menu_block_report else R.string.menu_block) { _, _ ->
+                viewModel.blockConversation(blocked = true, report = report)
+            }
             .create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(0xFFFF8589.toInt())
@@ -690,6 +787,7 @@ class ThreadFragment : Fragment() {
         override fun onReact(message: MessageDto, emoji: String) {
             EmojiCatalog.remember(emoji)
             viewModel.react(message, emoji)
+            if (appPrefs.holidayAnimations) activity?.let { ScreenEffects.reaction(it, emoji) }
         }
     }
 

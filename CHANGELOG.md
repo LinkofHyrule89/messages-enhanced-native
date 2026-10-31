@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.7.12
+
+- Holiday and keyword animations: messages like "Happy birthday", "Happy New Year", "love you", "lol", "good morning", seasonal greetings and more play a short full-screen effect, and reactions play a small burst. New setting "Holiday animations" (on by default). Respects the system "Remove animations" setting.
+- Animated emoji: a message that is a single emoji shows as a large animated Noto emoji; two or three emoji show large. New setting "Animated emojis" (on by default).
+- Clean links: long-press the message box and choose "Clean links" to remove tracking parameters (utm_, ref, si and similar) from links before you send. The rule is an editable regular expression in Settings, with validation and Reset to default.
+- New setting "Auto-clean shared links" (on by default): links in text shared into the app, including direct share shortcuts, are cleaned with the same rule before the message box is filled.
+- Block, and Block & report spam, in the conversation menu for one-to-one texts.
+- Tap the red "Failed" label on a message to try sending it again.
+- Incoming multimedia messages that the phone has not downloaded show "Tap to download".
+- Opening a photo asks the phone for the full-resolution original.
+- The message box says "Text message" for SMS chats, like Google Messages.
+
 ## v0.7.11
 
 - New setting "Show deleted message placeholders" (off by default, saved on this device). When it is on, a message its sender deleted for everyone shows as an italic "This message was deleted" bubble with the sender and time. The deleted text is never kept or shown. When it is off, deleted messages disappear as before.

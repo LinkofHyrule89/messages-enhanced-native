@@ -504,3 +504,17 @@ data class StoredCookie(
     val hostOnly: Boolean,
     val persistent: Boolean,
 )
+
+@Serializable
+data class BlockRequest(
+    @SerialName("conversation_id") val conversationId: String,
+    val blocked: Boolean,
+    val report: Boolean,
+)
+
+/** action: resend, download (MMS), or fullsize (image). */
+@Serializable
+data class MessageActionRequest(
+    @SerialName("message_id") val messageId: String,
+    val action: String,
+)

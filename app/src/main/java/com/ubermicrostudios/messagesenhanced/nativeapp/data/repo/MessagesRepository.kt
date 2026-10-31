@@ -244,6 +244,20 @@ class MessagesRepository @Inject constructor(
         requireOk(api.archiveConversation(ArchiveRequest(conversationId, archived = true)), "Couldn't archive")
     }
 
+    suspend fun block(conversationId: String, blocked: Boolean, report: Boolean) {
+        requireOk(
+            api.blockConversation(com.ubermicrostudios.messagesenhanced.nativeapp.data.model.BlockRequest(conversationId, blocked, report)),
+            if (blocked) "Couldn't block" else "Couldn't unblock",
+        )
+    }
+
+    suspend fun messageAction(messageId: String, action: String) {
+        requireOk(
+            api.messageAction(com.ubermicrostudios.messagesenhanced.nativeapp.data.model.MessageActionRequest(messageId, action)),
+            "Couldn't update the message",
+        )
+    }
+
     suspend fun trash(conversationId: String) {
         requireOk(api.trashConversation(ConversationIdRequest(conversationId)), "Couldn't move it to trash")
     }

@@ -134,6 +134,55 @@
                 android:textColor="@color/text" />
 
             <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/holiday_animations"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/holiday_animations"
+                android:textColor="@color/text" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/animated_emojis"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/animated_emojis"
+                android:textColor="@color/text" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/auto_clean_shared"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/auto_clean_shared_links"
+                android:textColor="@color/text" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/clean_rule_layout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:hint="@string/clean_links_rule"
+                app:helperText="@string/clean_links_rule_help">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/clean_rule"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:inputType="textNoSuggestions|textVisiblePassword"
+                    android:textColor="@color/text"
+                    android:textSize="13sp" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/clean_rule_reset"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/clean_links_reset" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
                 android:id="@+id/notifications"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

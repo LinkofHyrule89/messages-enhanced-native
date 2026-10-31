@@ -63,3 +63,7 @@ The app reads the latest GitHub release for the repository in the `GITHUB_OWNER`
 A newer `vX.Y.Z` tag with an `.apk` asset opens a dialog with the version and the release notes. Update downloads the APK into the app cache, checks the asset size, and checks the `sha256:` digest when GitHub includes one. A mismatch deletes the file and shows an error. Install uses a `PackageInstaller` session. Android will ask you to allow installs from this app the first time.
 
 Tag pushes (`v*`) are built and published by `.github/workflows/release.yml`. The workflow expects these repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, and `KEY_PASSWORD`.
+
+## Attribution
+
+Animated emoji are [Noto Animated Emoji](https://googlefonts.github.io/noto-emoji-animation/) by Google, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/legal-code), loaded at runtime from fonts.gstatic.com and not modified or bundled. Holiday animations are original code.

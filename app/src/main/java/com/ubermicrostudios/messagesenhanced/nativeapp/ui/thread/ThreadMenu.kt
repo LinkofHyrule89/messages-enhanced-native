@@ -45,6 +45,10 @@ object ThreadMenu {
             if (sms) {
                 row(R.drawable.ic_archive, context.getString(R.string.menu_archive)) { actions.archive() }
                 row(R.drawable.ic_trash, context.getString(R.string.menu_trash), danger = true) { actions.trash() }
+                if (!state.isGroup) {
+                    row(R.drawable.ic_block, context.getString(R.string.menu_block), danger = true) { actions.block(false) }
+                    row(R.drawable.ic_report, context.getString(R.string.menu_block_report), danger = true) { actions.block(true) }
+                }
             }
             row(R.drawable.ic_settings, context.getString(R.string.settings)) { actions.settings() }
         }
@@ -114,6 +118,7 @@ object ThreadMenu {
         val pin: () -> Unit,
         val archive: () -> Unit,
         val trash: () -> Unit,
+        val block: (report: Boolean) -> Unit = {},
         val settings: () -> Unit,
     )
 }

@@ -35,12 +35,17 @@ import javax.inject.Inject
 class ShareActivity : SessionActivity() {
     @Inject lateinit var messagesRepo: MessagesRepository
     @Inject lateinit var baseUrl: BaseUrlProvider
+    @Inject lateinit var appPrefs: com.ubermicrostudios.messagesenhanced.nativeapp.data.prefs.AppPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         observeAuthLoss()
         if (savedInstanceState != null) return
-        val text = sharedText(intent)
+        val raw = sharedText(intent)
+        // Auto-clean shared links (share sheet and direct share) before prefilling the composer.
+        val text = if (appPrefs.autoCleanSharedLinks) {
+            com.ubermicrostudios.messagesenhanced.nativeapp.util.LinkCleaner.cleanText(raw, appPrefs.cleanLinksRule).text
+        } else raw
         val uris = sharedUris(intent)
         if (text.isBlank() && uris.isEmpty()) {
             finish()

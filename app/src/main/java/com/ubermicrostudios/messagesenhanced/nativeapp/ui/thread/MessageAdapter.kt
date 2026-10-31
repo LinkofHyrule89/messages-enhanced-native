@@ -1,5 +1,6 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread
 
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.EmojiOnly
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
@@ -69,6 +70,8 @@ class MessageAdapter(
     private val syncGesture: (View) -> Unit,
     private val onRecycled: (View) -> Unit,
     private val onImage: (MessageDto) -> Unit,
+    private val onMessageAction: (MessageDto, String) -> Unit = { _, _ -> },
+    private val animatedEmoji: () -> Boolean = { true },
 ) : ListAdapter<MessageRuns.Row, RecyclerView.ViewHolder>(Diff) {
 
     var starredIds: Set<String> = emptySet()
@@ -245,6 +248,19 @@ class MessageAdapter(
         time.isVisible = statusOnly.isNotEmpty()
         time.text = statusOnly
         time.setTextColor(if (kind == ReceiptKind.FAILED) 0xFFFF8589.toInt() else 0x99FFFFFF.toInt())
+        // Google Messages: tap a failed message to retry.
+        if (kind == ReceiptKind.FAILED && item.messageId.isNotBlank() && !item.messageId.startsWith("local-")) {
+            time.setOnClickListener { if (!selecting) onMessageAction(item, "resend") }
+        } else {
+            time.setOnClickListener(null)
+            time.isClickable = false
+        }
+
+        // Emoji-only messages: animated Noto emoji (single) or large text (2-3), no bubble.
+        val baseSize = (body.getTag(R.id.tag_body_size) as? Float) ?: body.textSize.also { body.setTag(R.id.tag_body_size, it) }
+        val emojis = if (!deleted && !item.hasAttachment()) EmojiOnly.split(item.body) else null
+        body.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, if (emojis != null) baseSize * 2.6f else baseSize)
+        if (emojis != null) bubble.background = null
 
         val locked = Encryption.messageEncrypted(item, look.encryption) ||
             Encryption.protocolEncrypted(look.displayProtocol)
@@ -260,7 +276,35 @@ class MessageAdapter(
         root.findViewById<TextView>(R.id.star_mark)?.isVisible = item.messageId in starredIds
         bubble.foreground = if (selecting && item.messageId in selectedIds) selectionStroke(density) else null
 
+        val mmsPending = !item.isFromMe && MMS_DOWNLOAD.containsMatchIn(item.status)
+        attachment.setOnClickListener(null)
+        attachment.isClickable = false
         when {
+            emojis != null && emojis.size == 1 && animatedEmoji() -> {
+                attachment.isVisible = false
+                image.isVisible = true
+                body.isVisible = false
+                image.load(EmojiOnly.notoUrl(emojis[0]), EmojiLoader.get(image.context)) {
+                    size((96 * density).toInt())
+                    listener(onError = { _, _ ->
+                        image.isVisible = false
+                        body.isVisible = true
+                    })
+                }
+            }
+            mmsPending -> {
+                image.isVisible = false
+                attachment.isVisible = true
+                val expired = item.status.contains("EXPIRED")
+                attachment.text = if (expired) "Multimedia message expired" else attachment.context.getString(R.string.mms_tap_download)
+                if (!expired) {
+                    attachment.setOnClickListener {
+                        if (selecting) return@setOnClickListener
+                        attachment.text = attachment.context.getString(R.string.mms_downloading)
+                        onMessageAction(item, "download")
+                    }
+                }
+            }
             item.isImageMedia() && item.localPreview.isNotBlank() -> {
                 image.isVisible = true
                 attachment.isVisible = false
@@ -296,12 +340,12 @@ class MessageAdapter(
         bindLink(item.body, linkCard, linkImage, linkSite, linkTitle, linkDesc)
         bindReceipt(row, kind, receipt, receiptAvatars, receiptLabel, receiptIcon, look)
         bindTapDetail(item, locked, tapDetail, tapDetailText, tapDetailLock)
-        if (image.isVisible) {
+        if (image.isVisible && emojis == null) {
             image.setOnClickListener { if (!selecting) onImage(item) }
         } else {
             image.setOnClickListener(null)
         }
-        image.isClickable = image.isVisible
+        image.isClickable = image.isVisible && emojis == null
         reactions.isClickable = reactions.isVisible
     }
 
@@ -643,6 +687,7 @@ class MessageAdapter(
     }
 
     companion object {
+        private val MMS_DOWNLOAD = Regex("INCOMING_YET_TO_MANUAL_DOWNLOAD|INCOMING_DOWNLOAD_FAILED|INCOMING_DOWNLOAD_CANCELED|INCOMING_EXPIRED_OR_NOT_AVAILABLE")
         private const val TYPE_ME = 1
         private const val TYPE_THEM = 2
     }

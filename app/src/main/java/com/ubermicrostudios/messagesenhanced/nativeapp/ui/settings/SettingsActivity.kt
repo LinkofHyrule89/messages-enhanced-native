@@ -67,6 +67,30 @@ class SettingsActivity : SessionActivity() {
         binding.hideText.isChecked = initial.hideText
         binding.showDeleted.isChecked = appPrefs.showDeletedPlaceholders
         binding.showDeleted.setOnCheckedChangeListener { _, checked -> appPrefs.showDeletedPlaceholders = checked }
+        binding.holidayAnimations.isChecked = appPrefs.holidayAnimations
+        binding.holidayAnimations.setOnCheckedChangeListener { _, checked -> appPrefs.holidayAnimations = checked }
+        binding.animatedEmojis.isChecked = appPrefs.animatedEmojis
+        binding.animatedEmojis.setOnCheckedChangeListener { _, checked -> appPrefs.animatedEmojis = checked }
+        binding.autoCleanShared.isChecked = appPrefs.autoCleanSharedLinks
+        binding.autoCleanShared.setOnCheckedChangeListener { _, checked -> appPrefs.autoCleanSharedLinks = checked }
+        binding.cleanRule.setText(appPrefs.cleanLinksRule)
+        binding.cleanRule.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                val rule = s?.toString().orEmpty()
+                if (com.ubermicrostudios.messagesenhanced.nativeapp.util.LinkCleaner.isValid(rule)) {
+                    binding.cleanRuleLayout.error = null
+                    appPrefs.cleanLinksRule = rule
+                } else {
+                    binding.cleanRuleLayout.error = getString(R.string.clean_links_rule_invalid)
+                }
+            }
+        })
+        binding.cleanRuleReset.setOnClickListener {
+            appPrefs.resetCleanLinksRule()
+            binding.cleanRule.setText(appPrefs.cleanLinksRule)
+        }
         binding.version.text = getString(R.string.app_version, initial.version)
 
         binding.serverUrl.doAfterTextChanged { viewModel.onServerUrl(it?.toString().orEmpty()) }

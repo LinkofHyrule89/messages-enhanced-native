@@ -838,6 +838,31 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
+    fun blockConversation(blocked: Boolean, report: Boolean) {
+        val id = _state.value.conversationId
+        if (id.isBlank()) return
+        viewModelScope.launch {
+            runCatchingCancellable { messagesRepo.block(id, blocked, report) }
+                .onSuccess {
+                    effect(ThreadEffect.ListChanged)
+                    if (blocked) {
+                        prefs.clearLastSelectedConversationId(id)
+                        effect(ThreadEffect.Close)
+                    }
+                }
+                .onFailure { effect(ThreadEffect.Toast(NetErrors.friendly(it))) }
+        }
+    }
+
+    /** resend, download (MMS) or fullsize; the phone pushes the updated message back. */
+    fun messageAction(messageId: String, action: String, quiet: Boolean = false) {
+        if (messageId.isBlank() || messageId.startsWith("local-")) return
+        viewModelScope.launch {
+            runCatchingCancellable { messagesRepo.messageAction(messageId, action) }
+                .onFailure { if (!quiet) effect(ThreadEffect.Toast(NetErrors.friendly(it))) }
+        }
+    }
+
     fun trashConversation() {
         val id = _state.value.conversationId
         if (id.isBlank()) return

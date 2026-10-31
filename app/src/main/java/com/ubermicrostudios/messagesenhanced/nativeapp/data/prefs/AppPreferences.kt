@@ -103,6 +103,32 @@ class AppPreferences @Inject constructor(
         get() = settings.getBoolean(KEY_SHOW_DELETED, false)
         set(value) = settings.edit { putBoolean(KEY_SHOW_DELETED, value) }
 
+    /** Full-screen holiday/keyword effects and reaction bursts. On by default. */
+    var holidayAnimations: Boolean
+        get() = settings.getBoolean(KEY_HOLIDAY_FX, true)
+        set(value) = settings.edit { putBoolean(KEY_HOLIDAY_FX, value) }
+
+    /** Large animated Noto emoji for emoji-only messages. On by default. */
+    var animatedEmojis: Boolean
+        get() = settings.getBoolean(KEY_ANIM_EMOJI, true)
+        set(value) = settings.edit { putBoolean(KEY_ANIM_EMOJI, value) }
+
+    /** Clean tracking parameters from links shared into the app. On by default. */
+    var autoCleanSharedLinks: Boolean
+        get() = settings.getBoolean(KEY_AUTO_CLEAN_SHARED, true)
+        set(value) = settings.edit { putBoolean(KEY_AUTO_CLEAN_SHARED, value) }
+
+    /** Clean links rule (regex); invalid or blank falls back to the default. */
+    var cleanLinksRule: String
+        get() = settings.getString(KEY_CLEAN_RULE, null)
+            ?.takeIf { com.ubermicrostudios.messagesenhanced.nativeapp.util.LinkCleaner.isValid(it) }
+            ?: com.ubermicrostudios.messagesenhanced.nativeapp.util.LinkCleaner.DEFAULT_RULE
+        set(value) = settings.edit { putString(KEY_CLEAN_RULE, value.trim()) }
+
+    fun resetCleanLinksRule() {
+        settings.edit { remove(KEY_CLEAN_RULE) }
+    }
+
     var notificationsEnabled: Boolean
         get() = settings.getBoolean(KEY_NOTIFICATIONS, false)
         set(value) = settings.edit { putBoolean(KEY_NOTIFICATIONS, value) }
@@ -186,6 +212,10 @@ class AppPreferences @Inject constructor(
         private const val KEY_UPDATE_CHECK_AT = "update_check_at"
         internal const val KEY_AUTO_UPDATE = "auto_update"
         internal const val KEY_SHOW_DELETED = "show_deleted_placeholders"
+        internal const val KEY_HOLIDAY_FX = "holiday_animations"
+        internal const val KEY_ANIM_EMOJI = "animated_emojis"
+        internal const val KEY_AUTO_CLEAN_SHARED = "auto_clean_shared_links"
+        internal const val KEY_CLEAN_RULE = "clean_links_rule"
         internal const val KEY_RELAUNCH_AFTER_UPDATE = "relaunch_after_update"
         private const val KEY_LAST_CONVERSATION = "last_selected_conversation_id"
         private const val KEY_WHATS_NEW_CODE = "whats_new_version_code"
