@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.4
+## v0.7.4
 
 - The "Disconnected from Google Messages" banner now waits for 45 seconds of continuous disconnection, so brief server restarts and network blips no longer flash it. It clears as soon as the connection returns. "Sign in needed" still shows right away.
 
